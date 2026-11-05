@@ -1,0 +1,12 @@
+{
+  "name": "hisaab-ensv2-onboarding",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "viem": "^2.35.0"
+  },
+  "devDependencies": {}
+}
