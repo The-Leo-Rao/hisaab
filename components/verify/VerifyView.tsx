@@ -59,7 +59,7 @@ export function VerifyView({ id }: { id: string }) {
   const hero = useHero();
   const [result, setResult] = useState<VerifyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [document, setDocument] = useState<SheetDoc | null>(null);
+  const [sheetDoc, setSheetDoc] = useState<SheetDoc | null>(null);
   const [fragment, setFragment] = useState<string | null>(null);
   const [first, setFirst] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -77,7 +77,7 @@ export function VerifyView({ id }: { id: string }) {
             : await api.verify(id);
         if (r.exists && r.document && !docRef.current) {
           docRef.current = r.document;
-          setDocument(r.document as SheetDoc);
+          setSheetDoc(r.document as SheetDoc);
         }
         setFragment(frag);
         setResult(r);
@@ -93,12 +93,12 @@ export function VerifyView({ id }: { id: string }) {
 
   useEffect(() => {
     docRef.current = null;
-    setDocument(null);
+    setSheetDoc(null);
     try {
       const dropped = sessionStorage.getItem(`hisaab:drop:${id}`);
       if (dropped) {
         docRef.current = JSON.parse(dropped);
-        setDocument(docRef.current as SheetDoc);
+        setSheetDoc(docRef.current as SheetDoc);
         sessionStorage.removeItem(`hisaab:drop:${id}`);
       }
     } catch {}
@@ -108,9 +108,16 @@ export function VerifyView({ id }: { id: string }) {
   }, [id, load]);
 
   useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") load({ quiet: true });
+    }, 4000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  useEffect(() => {
     const onHash = () => {
       docRef.current = null;
-      setDocument(null);
+      setSheetDoc(null);
       setResult(null);
       setFirst(true);
       load();
@@ -172,7 +179,7 @@ export function VerifyView({ id }: { id: string }) {
       <section className="relative overflow-hidden rounded-md border border-rule bg-card px-5 pt-6 pb-6 md:px-8" aria-live="polite">
         {found && verdict ? (
           <>
-            <div className="pr-0 sm:pr-44">
+            <div className={cn("pr-0", verdict.stamp?.label ? "sm:pr-64" : "sm:pr-44")}>
               <motion.h1
                 key={String(found.verified) + verdict.tone}
                 className="display"
@@ -192,7 +199,7 @@ export function VerifyView({ id }: { id: string }) {
                   key={`${verdict.stamp.variant}-${verdict.stamp.label ?? ""}`}
                   variant={verdict.stamp.variant}
                   label={verdict.stamp.label}
-                  date={found.invoice.paidAt !== "0" ? paidOn.toUpperCase() : undefined}
+                  date={verdict.stamp.variant === "void" ? longDate(Math.floor(Date.parse(found.checkedAt) / 1000)).toUpperCase() : found.invoice.paidAt !== "0" ? paidOn.toUpperCase() : undefined}
                   ariaLabel={`${verdict.stamp.label ?? (verdict.stamp.variant === "paid" ? "Paid" : "Verified")}${found.invoice.paidAt !== "0" ? ` on ${paidOn}` : ""}`}
                   delay={stampDelay}
                   className="scale-90 sm:scale-100"
@@ -242,8 +249,8 @@ export function VerifyView({ id }: { id: string }) {
       )}
 
       {found &&
-        (document ? (
-          <InvoiceSheet doc={document} id={id} docHash={found.invoice.docHash} collapsible />
+        (sheetDoc ? (
+          <InvoiceSheet doc={sheetDoc} id={id} docHash={found.invoice.docHash} collapsible />
         ) : (
           <p className="flex gap-3 rounded-md border border-warn/40 bg-warn-fill/15 p-4 text-[15px] text-warn">
             <TriangleAlert className="mt-0.5 size-5 shrink-0" />
@@ -294,7 +301,7 @@ export function VerifyView({ id }: { id: string }) {
             >
               <FileDown /> Download Hisaab Statement (PDF)
             </Button>
-            {document && (
+            {sheetDoc && (
               <Button variant="secondary" onClick={() => downloadPdf("/invoice-pdf", { id, document: docRef.current ?? undefined }, `invoice-${id}.pdf`).catch((e) => toast.error(e.message))}>
                 Invoice PDF
               </Button>
@@ -305,7 +312,7 @@ export function VerifyView({ id }: { id: string }) {
             onResult={(r) => {
               if (r.exists && r.document) {
                 docRef.current = r.document;
-                setDocument(r.document as SheetDoc);
+                setSheetDoc(r.document as SheetDoc);
               }
               setFirst(true);
               setResult(null);
