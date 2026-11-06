@@ -5,6 +5,7 @@ import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 import {Invoice, Status} from "./interfaces/IHisaabRegistry.sol";
+import {QRCode} from "./QRCode.sol";
 
 library ReceiptSVG {
     using Strings for uint256;
@@ -22,42 +23,140 @@ library ReceiptSVG {
             '","description":"',
             DESCRIPTION,
             '","image":"data:image/svg+xml;base64,',
-            Base64.encode(bytes(svg(inv))),
+            Base64.encode(bytes(svg(id, inv, verifyBase))),
             '","external_url":"',
-            verifyBase,
-            id.toString(),
+            verifyUrl(id, verifyBase),
             '","attributes":',
             _attributes(inv),
             "}"
         );
     }
 
-    function svg(Invoice memory inv) internal pure returns (string memory) {
-        string memory head = string.concat(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">',
-            '<rect width="400" height="250" rx="16" fill="#0f172a"/>',
-            '<text x="24" y="38" font-family="monospace" font-size="14" fill="#34d399">HISAAB RECEIPT</text>',
-            '<text x="24" y="82" font-family="monospace" font-size="30" fill="#f8fafc">',
-            formatAmount(inv.amount),
-            " USDT</text>"
+    function verifyUrl(uint256 id, string memory verifyBase) internal pure returns (string memory) {
+        return string.concat(verifyBase, id.toString());
+    }
+
+    function svg(uint256 id, Invoice memory inv, string memory verifyBase) internal pure returns (string memory) {
+        string memory accent = statusColor(inv);
+        return string.concat(
+            _frame(accent),
+            _header(id),
+            _body(inv, accent),
+            _qrPanel(id, inv, verifyBase, accent),
+            "</svg>"
         );
-        string memory names = string.concat(
-            '<text x="24" y="118" font-family="monospace" font-size="13" fill="#cbd5e1">from ',
-            sanitize(inv.issuerName),
-            '</text><text x="24" y="140" font-family="monospace" font-size="13" fill="#cbd5e1">to ',
-            _orDash(sanitize(inv.clientName)),
+    }
+
+    function statusColor(Invoice memory inv) internal pure returns (string memory) {
+        if (inv.status == Status.Paid) return inv.refunded == 0 ? "#34d399" : "#fbbf24";
+        if (inv.status == Status.Refunded || inv.status == Status.Cancelled) return "#f87171";
+        return "#94a3b8";
+    }
+
+    function _frame(string memory accent) private pure returns (string memory) {
+        return string.concat(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">',
+            '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
+            '<stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#172544"/></linearGradient>',
+            '<pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">',
+            '<path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.035"/></pattern>',
+            '<clipPath id="card"><rect width="640" height="400" rx="28"/></clipPath></defs>',
+            '<g clip-path="url(#card)"><rect width="640" height="400" fill="url(#bg)"/>',
+            '<rect width="640" height="400" fill="url(#grid)"/>',
+            string.concat('<circle cx="600" cy="420" r="210" fill="', accent, '" fill-opacity="0.09"/>'),
+            string.concat('<rect width="10" height="400" fill="', accent, '"/></g>')
+        );
+    }
+
+    function _header(uint256 id) private pure returns (string memory) {
+        return string.concat(
+            '<text x="44" y="62" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" ',
+            'font-weight="800" letter-spacing="6" fill="#f8fafc">HISAAB</text>',
+            '<text x="44" y="86" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" font-size="11" ',
+            'letter-spacing="2.5" fill="#94a3b8">PAYMENT RECEIPT \xC2\xB7 #',
+            id.toString(),
             "</text>"
         );
-        string memory foot = string.concat(
-            '<text x="24" y="176" font-family="monospace" font-size="12" fill="#94a3b8">paid ',
-            date(inv.paidAt),
-            '</text><text x="24" y="198" font-family="monospace" font-size="12" fill="#94a3b8">doc ',
-            shortHash(inv.docHash),
-            '</text><text x="24" y="230" font-family="monospace" font-size="13" fill="#fbbf24">',
-            statusLabel(inv),
-            "</text></svg>"
+    }
+
+    function _body(Invoice memory inv, string memory accent) private pure returns (string memory) {
+        string memory font = 'font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif"';
+        string memory amount = string.concat(
+            '<text x="42" y="168" ', font, ' font-size="58" font-weight="800" fill="#f8fafc">',
+            formatAmount(inv.amount),
+            string.concat('<tspan font-size="20" font-weight="600" dx="12" fill="', accent, '">USDT</tspan></text>')
         );
-        return string.concat(head, names, foot);
+        string memory names = string.concat(
+            _label(44, 214, "FROM"),
+            _value(44, 238, sanitize(inv.issuerName)),
+            _label(44, 274, "TO"),
+            _value(44, 298, _orDash(sanitize(inv.clientName)))
+        );
+        string memory foot = string.concat(
+            _label(44, 338, "PAID ON"),
+            '<text x="44" y="360" ', font, ' font-size="14" fill="#e2e8f0">', date(inv.paidAt), "</text>",
+            _label(170, 338, "DOCUMENT"),
+            '<text x="170" y="360" font-family="ui-monospace,Consolas,monospace" font-size="13" fill="#e2e8f0">',
+            shortHash(inv.docHash),
+            "</text>"
+        );
+        return string.concat(amount, names, foot);
+    }
+
+    function _qrPanel(uint256 id, Invoice memory inv, string memory verifyBase, string memory accent)
+        private
+        pure
+        returns (string memory)
+    {
+        string memory path = QRCode.svgPath(QRCode.encode(bytes(verifyUrl(id, verifyBase))), 4);
+        string memory code = bytes(path).length == 0
+            ? '<text x="508" y="146" text-anchor="middle" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" fill="#0b1220">verify online</text>'
+            : string.concat(
+                '<g transform="translate(426 52) scale(4)"><path shape-rendering="crispEdges" fill="#0b1220" d="',
+                path,
+                '"/></g>'
+            );
+        return string.concat(
+            '<rect x="418" y="44" width="180" height="180" rx="18" fill="#f8fafc"/>',
+            code,
+            '<text x="508" y="252" text-anchor="middle" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" ',
+            'font-size="11" letter-spacing="3" fill="#cbd5e1">SCAN TO VERIFY</text>',
+            _pill(statusLabel(inv), accent),
+            '<text x="596" y="372" text-anchor="end" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" ',
+            'font-size="11" letter-spacing="1" fill="#64748b">Whitechain \xC2\xB7 soulbound</text>'
+        );
+    }
+
+    function _pill(string memory label, string memory accent) private pure returns (string memory) {
+        return string.concat(
+            '<rect x="418" y="272" width="180" height="36" rx="18" fill="', accent, '" fill-opacity="0.14" stroke="',
+            accent,
+            '" stroke-opacity="0.7"/><text x="508" y="295" text-anchor="middle" ',
+            'font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="',
+            accent,
+            '">',
+            label,
+            "</text>"
+        );
+    }
+
+    function _label(uint256 x, uint256 y, string memory text) private pure returns (string memory) {
+        return string.concat(
+            '<text x="', x.toString(), '" y="', y.toString(),
+            '" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" font-size="10.5" letter-spacing="2.5" fill="#64748b">',
+            text,
+            "</text>"
+        );
+    }
+
+    function _value(uint256 x, uint256 y, string memory text) private pure returns (string memory) {
+        string memory size = bytes(text).length > 30 ? "13" : "17";
+        return string.concat(
+            '<text x="', x.toString(), '" y="', y.toString(),
+            '" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" font-size="', size, '" font-weight="600" fill="#e2e8f0">',
+            text,
+            "</text>"
+        );
     }
 
     function _attributes(Invoice memory inv) private pure returns (string memory) {
