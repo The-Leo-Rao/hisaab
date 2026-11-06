@@ -3,10 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "dev": "vite --host 0.0.0.0",
+    "api": "node --env-file-if-exists=.env server.mjs",
+    "cli": "node --env-file-if-exists=.env cli.mjs"
   },
-  "dependencies": {
-    "viem": "^2.35.0"
-  },
-  "devDependencies": {}
+  "dependencies": { "viem": "^2.35.0" },
+  "devDependencies": { "vite": "^6.0.0" }
 }

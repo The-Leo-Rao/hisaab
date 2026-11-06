@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ENS test purchase</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <main>
+    <h1>ENS name test</h1>
+    <p class="lede">Check and test-register a <code>.eth</code> name on the network selected by <code>VITE_NETWORK</code>.</p>
+    <section class="requirements">
+      <h2>Before you start</h2>
+      <ul>
+        <li>MetaMask or Phantom installed in this browser</li>
+        <li>A wallet account on the selected network</li>
+        <li>Test ETH for gas, obtained from the selected network's faucet</li>
+        <li>MockUSDC for the test registration fee; the Sepolia page can mint it</li>
+      </ul>
+      <p class="muted">The included registration flow is available only on Sepolia. Mainnet selection is reserved for ENSv2 hierarchy management.</p>
+    </section>
+    <section>
+      <h2>1. Connect a wallet</h2>
+      <div class="row"><button id="metamask">Connect MetaMask</button><button id="phantom">Connect Phantom</button></div>
+      <p id="wallet" class="muted">No wallet connected</p>
+    </section>
+    <section>
+      <h2>2. Check a name</h2>
+      <label for="label">Name label (without .eth)</label>
+      <div class="row"><input id="label" placeholder="myname"><span>.eth</span><button id="check">Check availability and price</button></div>
+      <p id="quote" class="muted"></p>
+    </section>
+    <section>
+      <h2>3. Test registration</h2>
+      <div class="row"><button id="mint" disabled>Get test USDC</button><button id="begin" disabled>Approve and commit</button></div>
+      <p id="timer" class="muted"></p>
+      <button id="reveal" disabled>Complete registration</button>
+    </section>
+    <pre id="status" role="status">Choose a wallet to begin.</pre>
+    <p class="fine">Review every transaction in your wallet before confirming it.</p>
+  </main>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
