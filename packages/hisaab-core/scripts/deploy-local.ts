@@ -17,7 +17,7 @@ import { foundry } from "viem/chains";
 
 const MNEMONIC = "test test test test test test test test test test test junk";
 const rpcUrl = process.env.ANVIL_RPC ?? "http://127.0.0.1:8545";
-const verifyBase = process.env.VERIFY_BASE ?? "http://localhost:5173/verify/";
+const verifyBase = process.env.VERIFY_BASE ?? "http://localhost:3000/verify/";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../../..");
@@ -63,7 +63,7 @@ for (let i = 1; i <= 8; i++) {
 }
 
 const relayerKey = toHex(mnemonicToAccount(MNEMONIC, { addressIndex: 9 }).getHdKey().privateKey!);
-const result = { chainId: chain.id, rpcUrl, registry, receipt, usdt, deployBlock: deployBlock.toString(), relayerKey };
+const result = { chainId: chain.id, rpcUrl, registry, receipt, usdt, deployBlock: deployBlock.toString(), verifyBase, relayerKey };
 writeFileSync(join(root, ".deploy.local.json"), JSON.stringify(result, null, 2));
 
 console.log(`USDT      ${usdt}`);

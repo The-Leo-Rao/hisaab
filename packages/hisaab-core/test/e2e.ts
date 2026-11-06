@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import QR from "qrcode";
+import jsQR from "jsqr";
 import { createPublicClient, createWalletClient, http, parseEther, type Address } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import {
@@ -11,6 +13,7 @@ import {
   formatMoney,
   parseLink,
   payLink,
+  receiptAbi,
   signGaslessPayment,
   toUnits,
   type Signer,
@@ -33,6 +36,7 @@ const relayer = createRelayer({ chain, rpcUrl: net.rpcUrl, relayerKey: net.relay
 const settlement = { chainId: chain.id, registry: net.registry as Address, token: net.usdt as Address };
 const day = 86_400;
 const now = () => Math.floor(Date.now() / 1000);
+let lastPaid = 0n;
 
 function doc(n: string, client: Signer | null, lines: { description: string; qty: number; unitPrice: string }[], extra = {}) {
   return buildInvoice({
@@ -81,6 +85,38 @@ await step("freelancer: create, link round-trip, pay with wallet, receipt", asyn
   assert.equal(await hisaab.receiptOwner(id), ravi.account.address);
   assert.equal((await hisaab.payments(id)).length, 2);
   assert.ok((await hisaab.receiptImage(id))?.startsWith("data:image/svg+xml;base64,"));
+  lastPaid = id;
+});
+
+await step("receipt QR: matches the reference encoder and decodes to the verify URL", async () => {
+  const uri = await pub.readContract({ address: net.receipt, abi: receiptAbi, functionName: "tokenURI", args: [lastPaid] });
+  const meta = JSON.parse(Buffer.from(uri.split(",")[1], "base64").toString());
+  const svg = Buffer.from(meta.image.split(",")[1], "base64").toString();
+  if (process.env.SVG_OUT) writeFileSync(process.env.SVG_OUT, svg);
+  const d = svg.match(/scale\(4\)"><path[^>]* d="([^"]+)"/)![1];
+  const N = 33;
+  const grid = Array.from({ length: N }, () => new Array<boolean>(N).fill(false));
+  for (const m of d.matchAll(/M(\d+) (\d+)h(\d+)v1h-\d+z/g)) {
+    const [x, y, len] = [Number(m[1]) - 4, Number(m[2]) - 4, Number(m[3])];
+    for (let i = 0; i < len; i++) grid[y][x + i] = true;
+  }
+  const ref = QR.create([{ data: meta.external_url, mode: "byte" }], { version: 4, errorCorrectionLevel: "L", maskPattern: 0 });
+  assert.equal(ref.modules.size, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) assert.equal(grid[y][x], ref.modules.get(y, x) === 1, `module ${x},${y}`);
+
+  const scale = 4;
+  const px = (N + 8) * scale;
+  const rgba = new Uint8ClampedArray(px * px * 4).fill(255);
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++)
+      if (grid[y][x])
+        for (let dy = 0; dy < scale; dy++)
+          for (let dx = 0; dx < scale; dx++) {
+            const o = (((y + 4) * scale + dy) * px + (x + 4) * scale + dx) * 4;
+            rgba[o] = rgba[o + 1] = rgba[o + 2] = 0;
+          }
+  assert.equal(jsQR(rgba, px, px)?.data, `${net.verifyBase ?? "http://localhost:3000/verify/"}${lastPaid}`);
+  assert.equal(meta.external_url, `${net.verifyBase ?? "http://localhost:3000/verify/"}${lastPaid}`);
 });
 
 await step("gasless: relay pays, rejects replay, stranger and wrong amount", async () => {
