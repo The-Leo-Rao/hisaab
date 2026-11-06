@@ -36,9 +36,15 @@ const ravi = demo.ensControllers.ravi
 
 if (action === 'revoke') await send('acme', await api('/api/v1/ens/children/revoke', { name: arg, from: acme }))
 else if (action === 'approve') await send('acme', await api('/api/v1/hisaab/ens/approve', { name: demo.names.engagement, from: acme, invoiceId: arg }))
-else if (action === 'extend') await send('acme', await api('/api/v1/ens/children/modify', { name: arg, from: acme, expiry: String(Math.floor(Date.now() / 1000) + 365 * 86400) }))
+else if (action === 'restore') {
+  const label = arg.split('.')[0]
+  const resolver = demo.contracts.contractorResolvers?.[label]
+  if (!resolver) throw new Error(`No demo resolver for ${arg}`)
+  const expiry = String(Math.floor(Date.now() / 1000) + 180 * 86400)
+  await send('acme', await api('/api/v1/ens/children/create', { name: arg, from: acme, resolver, expiry }))
+} else if (action === 'extend') await send('acme', await api('/api/v1/ens/children/modify', { name: arg, from: acme, expiry: String(Math.floor(Date.now() / 1000) + 365 * 86400) }))
 else {
-  console.log('usage: node hisaab/scripts/demo-act.mjs revoke <name> | approve <invoiceId> | extend <name>')
+  console.log('usage: node hisaab/scripts/demo-act.mjs revoke <name> | restore <name> | approve <invoiceId> | extend <name>')
   console.log(`acme controller ${acme}, ravi controller ${ravi}`)
   process.exit(1)
 }
