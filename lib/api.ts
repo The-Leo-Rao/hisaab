@@ -1,4 +1,4 @@
-import type { InvoiceDoc } from "@hisaab/core";
+import type { InvoiceDoc, SealedInvoice } from "@hisaab/core";
 
 export const API = "/hisaab-api";
 
@@ -30,9 +30,9 @@ export type EnsName = {
 
 export type ApiInvoice = {
   id: string;
-  issuer: string;
-  client: string;
-  payer: string;
+  issuer: string | null;
+  client: string | null;
+  payer: string | null;
   amount: string;
   paid: string;
   refunded: string;
@@ -41,7 +41,7 @@ export type ApiInvoice = {
   paidAt: string;
   status: "Open" | "PartiallyPaid" | "Paid" | "Cancelled" | "Refunded";
   docHash: string;
-  issuerNode: string;
+  issuerNode: string | null;
   supersedes: string;
   issuerName: string;
   clientName: string;
@@ -50,27 +50,31 @@ export type ApiInvoice = {
   refundedText: string;
 };
 
-export type ApiPayment = { payer: string; amount: string; totalPaid: string; gasless: boolean; txHash: string; blockNumber: string; explorer: string };
-export type ApiRefund = { to: string; amount: string; txHash: string; explorer: string };
+export type ApiPayment = { payer?: string; amount: string; totalPaid: string; gasless: boolean; txHash: string; blockNumber: string; explorer: string };
+export type ApiRefund = { to?: string; amount: string; txHash: string; explorer: string };
 
 export type VerifyResult =
   | { id: string; exists: false }
   | {
       id: string;
       exists: true;
+      sealed: boolean;
+      unlocked: boolean;
       verified: boolean;
-      kind: "freelance" | "contractor";
+      kind: "freelance" | "contractor" | null;
       summary: string | null;
       checks: Check[];
       invoice: ApiInvoice;
       payments: ApiPayment[];
       refunds: ApiRefund[];
       receipt: { exists: boolean; owner: string | null; image: string | null; external_url: string | null };
-      ens: { issuer: EnsName; client: EnsName | null };
+      ens: { issuer: EnsName | null; client: EnsName | null };
       chain: { chainId: number; registry: string; receipt: string; usdt: string; explorer: string };
       links: { verify: string };
       checkedAt: string;
       document?: InvoiceDoc | null;
+      sealedDocument?: SealedInvoice | null;
+      needsKey?: boolean;
       source?: "pdf" | "json" | "none";
     };
 
@@ -106,10 +110,10 @@ export const api = {
   ensRecords: (body: Record<string, unknown>) =>
     call<{ records: { key: string; value: string }[]; via: string; transactions: UnsignedTx[] }>("/ens/records", body),
   clientRole: (body: { name: string; from: string; client: string }) => call<UnsignedTx>("/ens/client-role", body),
-  approve: (body: { name: string; from: string; invoiceId: string }) => call<UnsignedTx>("/ens/approve", body),
+  approve: (body: { name: string; from: string; approval: string }) => call<UnsignedTx>("/ens/approve", body),
 };
 
-export async function downloadPdf(path: "/statement" | "/invoice-pdf", body: { id: string; document?: unknown }, filename: string) {
+export async function downloadPdf(path: "/statement" | "/invoice-pdf", body: { id: string; document?: unknown; sealed?: unknown }, filename: string) {
   const res = await fetch(`${API}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));
