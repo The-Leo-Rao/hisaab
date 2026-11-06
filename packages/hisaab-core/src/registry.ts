@@ -25,6 +25,8 @@ export const usdtAbi = parseAbi([
   "function mint(address to, uint256 amount)",
 ]);
 
+export const RECEIPT_SINK: Address = "0x000000000000000000000000000000000000dEaD";
+
 export const STATUS = ["Open", "PartiallyPaid", "Paid", "Cancelled", "Refunded"] as const;
 export type StatusName = (typeof STATUS)[number];
 
