@@ -270,6 +270,41 @@ contract RegistryTest is BaseTest {
         registry.refund(id, 1);
     }
 
+    function test_RevertPay_AfterPartialRefund() public {
+        uint256 id = _create(acme);
+        vm.prank(acme);
+        registry.pay(id, 200e6);
+        vm.prank(ravi);
+        registry.refund(id, 100e6);
+        assertEq(_status(id), uint8(Status.PartiallyPaid));
+
+        vm.warp(dueDate + 1);
+        assertFalse(registry.isOverdue(id), "unpayable invoice is not overdue");
+
+        vm.prank(acme);
+        vm.expectRevert(IHisaabRegistry.NotPayable.selector);
+        registry.pay(id, 300e6);
+
+        vm.prank(acme);
+        vm.expectRevert(IHisaabRegistry.NotPayable.selector);
+        registry.pay(id, 1);
+
+        vm.prank(ravi);
+        registry.refund(id, 100e6);
+        assertEq(_status(id), uint8(Status.Refunded));
+        assertEq(receipt.balanceOf(ravi), 0);
+
+        CreateParams memory p = _params(acme);
+        p.docHash = keccak256("reissued");
+        p.dueDate = uint64(block.timestamp + 14 days);
+        p.supersedes = id;
+        vm.prank(ravi);
+        uint256 newId = registry.createInvoice(p);
+        vm.prank(acme);
+        registry.pay(newId, AMOUNT);
+        assertEq(receipt.ownerOf(newId), ravi);
+    }
+
     function test_CancelByEitherParty_OnlyWhenUnpaid() public {
         uint256 id1 = _create(acme);
         vm.expectEmit(true, true, false, false, address(registry));

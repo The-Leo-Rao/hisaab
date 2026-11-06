@@ -120,7 +120,7 @@ contract HisaabRegistry is IHisaabRegistry, ReentrancyGuard {
 
     function isOverdue(uint256 id) external view returns (bool) {
         Invoice storage inv = _invoices[id];
-        return inv.issuer != address(0) && block.timestamp > inv.dueDate
+        return inv.issuer != address(0) && inv.refunded == 0 && block.timestamp > inv.dueDate
             && (inv.status == Status.Open || inv.status == Status.PartiallyPaid);
     }
 
@@ -141,6 +141,7 @@ contract HisaabRegistry is IHisaabRegistry, ReentrancyGuard {
         issuer = inv.issuer;
         if (issuer == address(0)) revert InvoiceNotFound();
         if (inv.status != Status.Open && inv.status != Status.PartiallyPaid) revert NotPayable();
+        if (inv.refunded != 0) revert NotPayable();
         if (inv.client != address(0) && payer != inv.client) revert NotClient();
         if (inv.payer != address(0) && payer != inv.payer) revert WrongPayer();
         if (amount == 0) revert ZeroAmount();
