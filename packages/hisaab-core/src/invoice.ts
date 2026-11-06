@@ -98,13 +98,13 @@ export function buildInvoice(i: BuildInput): InvoiceDoc {
 
 export const totalUnits = (doc: InvoiceDoc): bigint => BigInt(doc.settlement.amountUnits);
 
-function b64url(bytes: Uint8Array): string {
+export function b64url(bytes: Uint8Array): string {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function fromB64url(s: string): Uint8Array {
+export function fromB64url(s: string): Uint8Array {
   const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4));
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
@@ -126,8 +126,13 @@ export async function decodeFragment(fragment: string): Promise<InvoiceDoc | nul
   return JSON.parse(new TextDecoder().decode(raw)) as InvoiceDoc;
 }
 
-export async function payLink(appBase: string, id: bigint, doc: object): Promise<string> {
-  return `${appBase.replace(/\/$/, "")}/pay/${id}#${await encodeFragment(doc)}`;
+export async function payLink(appBase: string, id: bigint, doc: object, key?: string): Promise<string> {
+  const k = key ? `&k=${encodeURIComponent(key)}` : "";
+  return `${appBase.replace(/\/$/, "")}/pay/${id}#${await encodeFragment(doc)}${k}`;
+}
+
+export function keyFromFragment(fragment: string): string | null {
+  return new URLSearchParams(fragment.replace(/^#/, "")).get("k");
 }
 
 export function parseLink(link: string): { id: bigint; fragment: string } {
