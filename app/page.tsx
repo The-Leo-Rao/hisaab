@@ -1,5 +1,5 @@
-import { PageTitle } from "@/components/AppShell";
+import { Landing } from "@/components/landing/Landing";
 
 export default function Home() {
-  return <PageTitle title={<>Invoices that <em>prove</em> themselves.</>} sub="Landing page lands later in the build order." />;
+  return <Landing />;
 }
