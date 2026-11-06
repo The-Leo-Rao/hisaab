@@ -1,0 +1,10 @@
+.next
+node_modules
+.env
+.env.*
+HSB_Contract/contracts/lib
+HSB_Contract/contracts/out
+HSB_Contract/contracts/cache
+HSB_Contract/contracts/broadcast
+HSB_Contract/node_modules
+HSB_Contract/.deploy.local.json
