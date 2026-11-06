@@ -86,11 +86,12 @@ library ReceiptSVG {
             formatAmount(inv.amount),
             string.concat('<tspan font-size="20" font-weight="600" dx="12" fill="', accent, '">USDT</tspan></text>')
         );
+        bool sealedNames = bytes(inv.issuerName).length == 0;
         string memory names = string.concat(
             _label(44, 214, "FROM"),
-            _value(44, 238, sanitize(inv.issuerName)),
+            _value(44, 238, sealedNames ? "Sealed" : sanitize(inv.issuerName)),
             _label(44, 274, "TO"),
-            _value(44, 298, _orDash(sanitize(inv.clientName)))
+            _value(44, 298, sealedNames ? "Sealed" : _orDash(sanitize(inv.clientName)))
         );
         string memory foot = string.concat(
             _label(44, 338, "PAID ON"),
