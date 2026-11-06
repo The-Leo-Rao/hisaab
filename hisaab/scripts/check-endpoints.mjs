@@ -162,8 +162,9 @@ if (FRAGMENT) {
     assert.equal(r.type, 'application/pdf')
     assert.equal(r.data.subarray(0, 5).toString(), '%PDF-')
   })
-  await check('hisaab POST invoice-pdf wrong id -> 409', async () => {
-    assert.equal((await call('POST', '/api/v1/hisaab/invoice-pdf', { id: '1', fragment: FRAGMENT })).status, 409)
+  await check('hisaab POST invoice-pdf tampered document -> 409', async () => {
+    const doc = (await call('POST', '/api/v1/hisaab/verify', { id: ID, fragment: FRAGMENT })).data.document
+    assert.equal((await call('POST', '/api/v1/hisaab/invoice-pdf', { id: ID, document: { ...doc, total: '1.00' } })).status, 409)
   })
 }
 await check('hisaab GET statement/:id.pdf', async () => {
