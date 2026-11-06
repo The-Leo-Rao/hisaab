@@ -267,6 +267,18 @@ Legacy base-only aliases are retained:
 
 Hisaab adds invoice verification on Whitechain testnet. Set `HISAAB_REGISTRY` and `HISAAB_RECEIPT` to enable it.
 
+### Sealed invoices (privacy)
+
+Anyone who finds a worker's wallet should not be able to work out who they work for. So:
+
+- Onchain, an invoice has no names. `issuerName` and `clientName` are empty, and `issuerNode` is `keccak256(namehash(ens), invoiceSalt)`, a commitment that can't be matched against a list of subnames.
+- The receipt NFT is minted to `0x…dEaD`, not to the issuer, and its card says "Sealed".
+- ENS records hold commitments, not wallets or invoice ids: `hisaab.wallet = keccak256(wallet, nameSecret)` and `hisaab.approved` lists `keccak256(invoiceId, invoiceSalt)`. The name secret is `keccak256` of a signature by the issuing wallet, so nothing has to be stored.
+- The invoice PDF is a cover page with public facts plus `invoice.enc`: the invoice JSON encrypted with AES-256-GCM, key = HKDF-SHA256 of the invoice key (`HSB<id>-XXXX-…`, 130 random bits), salt = the onchain docHash.
+- Without the PDF **and** the key, `/verify/:id` shows only amount, status, dates and tx hashes. With both, the browser decrypts the invoice (the key never reaches this server) and the full checks run.
+
+What this does not hide: the USDT transfer itself is public, so a company paying from a wallet that is publicly its own still links to the worker's wallet.
+
 ### Hisaab status
 
 ```bash
@@ -293,13 +305,15 @@ Onchain only:
 curl http://localhost:3000/api/v1/hisaab/verify/15
 ```
 
-With a document or PDF:
+With the decrypted document:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/hisaab/verify \
   -H 'content-type: application/json' \
   -d '{ "id": 15, "document": { ... } }'
 ```
+
+With a sealed PDF (`{ "pdf": "<base64>" }`) the response has `needsKey: true` and `sealedDocument`. Decrypt it in the browser with the invoice key, then post the document as above.
 
 ### QR codes and PDFs
 
@@ -308,7 +322,7 @@ curl http://localhost:3000/api/v1/hisaab/qr/15.svg
 curl http://localhost:3000/api/v1/hisaab/qr/15.png?size=480
 curl http://localhost:3000/api/v1/hisaab/statement/15.pdf
 curl -X POST http://localhost:3000/api/v1/hisaab/statement -H 'content-type: application/json' -d '{ "id": 15, "document": { ... } }'
-curl -X POST http://localhost:3000/api/v1/hisaab/invoice-pdf -H 'content-type: application/json' -d '{ "id": 15, "document": { ... } }'
+curl -X POST http://localhost:3000/api/v1/hisaab/invoice-pdf -H 'content-type: application/json' -d '{ "id": 15, "sealed": { "v": 1, "alg": "A256GCM-HKDF-SHA256", ... } }'
 ```
 
 ### ENS record setup for Hisaab
@@ -322,7 +336,7 @@ curl -X POST http://localhost:3000/api/v1/hisaab/ens/records \
     "name": "alice.dev.acme-labs.eth",
     "from": "0xROOT_PARENT_WALLET",
     "kind": "contractor",
-    "issuer": "0xWHITECHAIN_WALLET",
+    "walletCommitment": "0xKECCAK_OF_WALLET_AND_NAME_SECRET",
     "employer": "acme-labs.eth",
     "role": "Engineer"
   }'
@@ -343,7 +357,7 @@ Approve a specific invoice:
 ```bash
 curl -X POST http://localhost:3000/api/v1/hisaab/ens/approve \
   -H 'content-type: application/json' \
-  -d '{ "name": "engagement.ravi-dev.eth", "from": "0xCLIENT", "invoiceId": 15 }'
+  -d '{ "name": "engagement.ravi-dev.eth", "from": "0xCLIENT", "approval": "0xKECCAK_OF_ID_AND_INVOICE_SALT" }'
 ```
 
 ---
