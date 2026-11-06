@@ -196,7 +196,7 @@ curl 'http://localhost:3000/api/v1/ens/children/status?parent=iownthis.eth&from=
 curl 'http://localhost:3000/api/v1/ens/subregistries?parent=team.iownthis.eth'
 ```
 
-Returns the current subregistry and every non-zero subregistry ever attached to the name, with ordered event history. Add `fromBlock=<block-number>` to limit the search.
+Returns the current subregistry and every non-zero subregistry attached to the name within the searched range, with ordered event history. By default the search covers the last 9,000 blocks (`ENS_LOG_LOOKBACK`), because public RPCs prune older logs; pass `fromBlock=<block-number>` (or set `ENS_FROM_BLOCK`) with an archive RPC to search further back. Queries are split into 50,000-block windows (`ENS_LOG_RANGE`).
 
 ---
 
