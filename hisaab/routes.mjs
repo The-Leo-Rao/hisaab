@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { isSealedInvoice } from './commit.mjs'
 import { config, requireDeployment, verifyUrl } from './config.mjs'
 import { readName } from './ens-read.mjs'
 import { prepareApproval, prepareClientApprovalRole, prepareRecords, recordPlan } from './ens-records.mjs'
-import { decodeFragmentDoc, docHash, jsonSafe } from './invoice.mjs'
+import { decodeFragmentDoc, jsonSafe } from './invoice.mjs'
 import { extractAttachments, invoicePdf, statementPdf } from './pdf.mjs'
 import { qrPng, qrSvg } from './qr.mjs'
 import { verifyInvoice } from './verify.mjs'
@@ -51,8 +52,10 @@ async function fromPdf(b) {
   const files = await extractAttachments(Buffer.from(String(b.pdf).replace(/^data:[^,]*,/, ''), 'base64'))
   const meta = files['hisaab-meta.json'] ? JSON.parse(files['hisaab-meta.json']) : null
   const document = files['invoice.json'] ? JSON.parse(files['invoice.json']) : null
-  if (!meta && !document) throw fail('No Hisaab attachments (invoice.json / hisaab-meta.json) found in this PDF.')
-  return { meta, document }
+  const sealed = files['invoice.enc'] ? JSON.parse(files['invoice.enc']) : null
+  if (!meta && !document && !sealed) throw fail('No Hisaab attachments (invoice.enc / hisaab-meta.json) found in this PDF.')
+  if (sealed && !isSealedInvoice(sealed)) throw fail('The sealed invoice inside this PDF is damaged.')
+  return { meta, document, sealed }
 }
 
 const pdfHeaders = (name) => ({ 'content-disposition': `inline; filename="${name}"` })
@@ -97,10 +100,12 @@ export async function handleHisaab(req, res, url) {
   if (POST && p === '/api/v1/hisaab/verify') {
     const b = await body(req)
     const pdf = await fromPdf(b)
-    const id = parseId(b.id ?? pdf.meta?.id)
+    const id = parseId(b.id ?? pdf.meta?.id ?? pdf.sealed?.id)
+    if (pdf.sealed && pdf.sealed.id !== String(id)) throw fail(`This PDF seals invoice #${pdf.sealed.id}, not #${id}.`, 409)
     const document = pdf.document ?? (await documentFrom(b))
     const r = await verifyInvoice(id, document)
-    return send(res, r.exists ? 200 : 404, { ...r, document: document ?? null, source: b.pdf ? 'pdf' : document ? 'json' : 'none' })
+    const sealed = pdf.sealed && !document ? pdf.sealed : null
+    return send(res, r.exists ? 200 : 404, { ...r, document: document ?? null, sealedDocument: sealed, needsKey: !!sealed, source: b.pdf ? 'pdf' : document ? 'json' : 'none' })
   }
 
   if (GET && (x = m(/^\/api\/v1\/hisaab\/qr\/(\d+)\.(svg|png)$/))) {
@@ -122,12 +127,13 @@ export async function handleHisaab(req, res, url) {
   if (POST && p === '/api/v1/hisaab/invoice-pdf') {
     const b = await body(req)
     const id = parseId(b.id)
-    const document = await documentFrom(b)
-    if (!document) throw fail('document (or fragment) is required.')
+    const sealed = b.sealed
+    if (!isSealedInvoice(sealed)) throw fail('sealed is required: the invoice encrypted in the browser with its invoice key. This API never builds a plaintext invoice PDF.')
+    if (sealed.id !== String(id)) throw fail(`sealed belongs to invoice #${sealed.id}, not #${id}.`, 409)
     const inv = await getInvoice(id)
     if (!inv) throw fail(`Invoice #${id} does not exist.`, 404)
-    if (docHash(document).toLowerCase() !== inv.docHash.toLowerCase()) throw fail('This document does not match the onchain hash of invoice #' + id + '.', 409)
-    return send(res, 200, Buffer.from(await invoicePdf(id, document, inv)), 'application/pdf', pdfHeaders(`invoice-${id}.pdf`))
+    if (sealed.docHash.toLowerCase() !== inv.docHash.toLowerCase()) throw fail('This sealed invoice does not match the onchain hash of invoice #' + id + '.', 409)
+    return send(res, 200, Buffer.from(await invoicePdf(id, sealed, inv)), 'application/pdf', pdfHeaders(`invoice-${id}-sealed.pdf`))
   }
 
   if (GET && p === '/api/v1/hisaab/ens/name') {
