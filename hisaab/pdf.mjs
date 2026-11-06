@@ -19,7 +19,7 @@ const C = {
 }
 const TONE = { green: C.green, amber: C.amber, red: C.red, grey: C.grey }
 
-const safe = (s) => String(s ?? '').replace(/[^\x20-\x7E]/g, '?')
+const safe = (s) => String(s ?? '').replace(/[^\x20-\x7E\xA0-\xFF–—‘’“”•…€]/g, '?')
 const short = (h, n = 10) => (h && h.length > 2 * n ? `${h.slice(0, n)}...${h.slice(-6)}` : h || '-')
 
 class Page {
@@ -66,7 +66,7 @@ class Page {
   }
 
   heading(t) {
-    this.ensure(40)
+    this.ensure(90)
     this.y -= 8
     this.text(t.toUpperCase(), M, this.y, { size: 9, font: this.f.bold, color: C.muted })
     this.y -= 8
@@ -146,11 +146,28 @@ export async function statementPdf(result, document) {
   const inv = result.invoice
   await band(p, 'Statement of payment', `Invoice #${result.id} on ${result.chain.chainId === 1874 ? 'Whitechain Sepolia' : `chain ${result.chain.chainId}`}`, result.id)
 
-  const verdictColor = result.verified ? C.green : result.checks.some((c) => c.tone === 'red') ? C.red : C.amber
-  p.page.drawRectangle({ x: M, y: p.y - 40, width: W - 2 * M, height: 48, color: verdictColor, opacity: 0.1, borderColor: verdictColor, borderWidth: 1 })
-  p.text(result.verified ? 'VERIFIED' : 'NOT FULLY VERIFIED', M + 12, p.y - 10, { size: 11, font: fonts.bold, color: verdictColor })
-  p.text(result.summary || 'One or more checks below are not green. Read each row before relying on this invoice.', M + 12, p.y - 26, { size: 8.5, color: C.ink })
-  p.y -= 64
+  const tone = Object.fromEntries(result.checks.map((c) => [c.key, c.tone]))
+  const onchainOnly = !result.verified && tone.hash === 'grey' && tone.issuer === 'green' && tone.payment === 'green'
+  const verdictColor = result.verified ? C.green : onchainOnly ? C.green : result.checks.some((c) => c.tone === 'red') ? C.red : C.amber
+  const title = result.verified ? 'VERIFIED' : onchainOnly ? 'VERIFIED ONCHAIN · DOCUMENT NOT ATTACHED' : 'NOT FULLY VERIFIED'
+  const note = result.summary || (onchainOnly
+    ? 'Issuer and payment check out onchain. Attach the invoice (or drop its PDF on the verify page) to also prove the document itself.'
+    : 'One or more checks below are not green. Read each row before relying on this invoice.')
+  const lines = []
+  let cur = ''
+  for (const w of note.split(/s+/)) {
+    const next = cur ? cur + ' ' + w : w
+    if (fonts.regular.widthOfTextAtSize(next, 8.5) > W - 2 * M - 24 && cur) {
+      lines.push(cur)
+      cur = w
+    } else cur = next
+  }
+  if (cur) lines.push(cur)
+  const boxH = 30 + lines.length * 11
+  p.page.drawRectangle({ x: M, y: p.y - boxH + 8, width: W - 2 * M, height: boxH, color: verdictColor, opacity: 0.1, borderColor: verdictColor, borderWidth: 1 })
+  p.text(title, M + 12, p.y - 10, { size: 11, font: fonts.bold, color: verdictColor })
+  lines.forEach((l, i) => p.text(l, M + 12, p.y - 26 - i * 11, { size: 8.5, color: C.ink }))
+  p.y -= boxH + 16
 
   p.heading('Invoice')
   p.kv([
