@@ -17,9 +17,10 @@ function tx(action, name, from, to, data, metadata = {}) {
     from,
     to,
     data,
-    value: '0x0',
     chainId: ens.chain.id,
     ...metadata,
+    value: '0x0',
+    metadata,
     note: 'Unsigned transaction. Send it from the connected wallet; this API never stores a key or broadcasts.',
   }
 }
@@ -69,8 +70,9 @@ export async function prepareRecords({ name, from, records }) {
     if (isSubname) out.push(await viaTeammateEndpoint(n, from, r))
     else {
       const resolver = await resolverFor(n)
-      const data = encodeFunctionData({ abi: resolverAbi, functionName: 'setData', args: [toHex(packetToBytes(n)), r.key, stringToHex(r.value)] })
-      out.push(tx('set-name-data', n, from, resolver, data, { key: r.key, recordValue: r.value }))
+      const encoded = stringToHex(r.value)
+      const data = encodeFunctionData({ abi: resolverAbi, functionName: 'setData', args: [toHex(packetToBytes(n)), r.key, encoded] })
+      out.push(tx('set-name-data', n, from, resolver, data, { key: r.key, encodedValue: encoded, value: encoded, recordValue: r.value }))
     }
   }
   return { name: n, via: isSubname ? '/api/v1/ens/subchildren/set-data' : 'direct setData', transactions: out }
@@ -96,6 +98,7 @@ export async function prepareApproval({ name, from, invoiceId }) {
   const existing = (info.records['hisaab.approved'] || '').split(',').map((s) => s.trim()).filter(Boolean)
   const entry = `invoice:${invoiceId}`
   const value = existing.includes(entry) ? existing.join(',') : [...existing, entry].join(',')
-  const data = encodeFunctionData({ abi: resolverAbi, functionName: 'setData', args: [toHex(packetToBytes(n)), 'hisaab.approved', stringToHex(value)] })
-  return tx('client-approve-invoice', n, from, info.resolver, data, { key: 'hisaab.approved', recordValue: value })
+  const encoded = stringToHex(value)
+  const data = encodeFunctionData({ abi: resolverAbi, functionName: 'setData', args: [toHex(packetToBytes(n)), 'hisaab.approved', encoded] })
+  return tx('client-approve-invoice', n, from, info.resolver, data, { key: 'hisaab.approved', encodedValue: encoded, value: encoded, recordValue: value })
 }

@@ -16,6 +16,8 @@ import {
 import { normalize, packetToBytes } from 'viem/ens'
 import { getNetwork, getRpcUrl } from './network.mjs'
 import { handleHisaab, isHisaabRoute } from './hisaab/routes.mjs'
+import { config as hisaabConfig } from './hisaab/config.mjs'
+import { wc as whitechainClient } from './hisaab/whitechain.mjs'
 
 const network = getNetwork(process.env.VITE_NETWORK)
 const port = Number(process.env.PORT || 3000)
@@ -45,6 +47,13 @@ const registryReadAbi = [
   { type: 'function', name: 'hasRootRoles', stateMutability: 'view', inputs: [{ name: 'roleBitmap', type: 'uint256' }, { name: 'account', type: 'address' }], outputs: [{ type: 'bool' }] },
   { type: 'function', name: 'getStatus', stateMutability: 'view', inputs: [{ name: 'anyId', type: 'uint256' }], outputs: [{ type: 'uint8' }] },
 ]
+
+const registryEventAbi = parseAbi([
+  'event LabelRegistered(uint256 indexed tokenId, bytes32 indexed labelHash, string label, address owner, uint64 expiry, address indexed sender)',
+  'event LabelReserved(uint256 indexed tokenId, bytes32 indexed labelHash, string label, uint64 expiry, address indexed sender)',
+  'event TokenRegenerated(uint256 indexed oldTokenId, uint256 indexed newTokenId)',
+  'event SubregistryUpdated(uint256 indexed tokenId, address indexed subregistry, address indexed sender)',
+])
 
 const resolverReadAbi = [
   { type: 'function', name: 'hasRootRoles', stateMutability: 'view', inputs: [{ name: 'roleBitmap', type: 'uint256' }, { name: 'account', type: 'address' }], outputs: [{ type: 'bool' }] },
@@ -106,6 +115,7 @@ async function readBody(req) {
 }
 
 function unsignedTransaction({ action, name, parent, from, to, data, value = 0n, chainId = network.chain.id, metadata = {} }) {
+  const txValue = `0x${value.toString(16)}`
   return {
     action,
     name,
@@ -113,10 +123,21 @@ function unsignedTransaction({ action, name, parent, from, to, data, value = 0n,
     from,
     to,
     data,
-    value: `0x${value.toString(16)}`,
     chainId,
     ...metadata,
+    value: txValue,
+    metadata,
     note: 'Unsigned transaction. Send it from the connected wallet after reviewing it; this API never stores a key or broadcasts a transaction.',
+  }
+}
+
+// Frontend wallet submission helper: only the fields a wallet should sign.
+export function walletSubmitFields(tx) {
+  return {
+    to: tx.to,
+    data: tx.data,
+    value: tx.value,
+    chainId: tx.chainId,
   }
 }
 
@@ -210,6 +231,16 @@ function labelId(label) {
   return BigInt(keccak256(toHex(label)))
 }
 
+function parseBlockNumber(value) {
+  if (value === null || value === undefined || value === '') return 0n
+  if (!/^(0|[1-9]\d*)$/.test(value)) throw fail('fromBlock must be a non-negative block number.')
+  return BigInt(value)
+}
+
+function registryStatus(status) {
+  return ['available', 'reserved', 'registered'][Number(status)] || 'unknown'
+}
+
 async function currentEnsOwner(name) {
   const normalized = normalize(String(name).trim())
   const labels = normalized.split('.')
@@ -228,6 +259,136 @@ async function currentEnsOwner(name) {
     parentLabel = label
   }
   return owner
+}
+
+// Resolve a name to the registry and label that own its subregistry pointer.
+// For example, team.iownthis.eth is the "team" entry in iownthis.eth's registry.
+async function resolveRegistryEntry(nameInput) {
+  const name = normalizedParentName(nameInput)
+  const labels = name.split('.')
+  let registry = ETH_REGISTRY
+
+  for (const label of labels.slice(1, -1).reverse()) {
+    const next = await client.readContract({ address: registry, abi: registryReadAbi, functionName: 'getSubregistry', args: [label] })
+    if (next === zeroAddress) throw fail(`The parent path for ${name} has no child registry at ${label}.`, 409)
+    registry = next
+  }
+  return { name, label: labels[0], registry }
+}
+
+async function listParentSubregistries(parentInput, fromBlockInput) {
+  const scope = await resolveRegistryEntry(parentInput)
+  const resource = labelId(scope.label)
+  const labelHash = keccak256(toHex(scope.label))
+  const fromBlock = parseBlockNumber(fromBlockInput)
+  const toBlock = await client.getBlockNumber()
+  if (fromBlock > toBlock) throw fail('fromBlock cannot be greater than the latest block.')
+
+  // Label events seed every registration lifecycle for this label. Token IDs
+  // can subsequently change when roles change, so TokenRegenerated completes
+  // the lineage before querying SubregistryUpdated by token ID. We do not rely
+  // on getTokenId because the advanced ABI correction removed it; the latest
+  // lifecycle event is the safest seed for the current token ID.
+  const [status, currentSubregistry, registrationLogs, reservationLogs] = await Promise.all([
+    client.readContract({ address: scope.registry, abi: registryReadAbi, functionName: 'getStatus', args: [resource] }),
+    client.readContract({ address: scope.registry, abi: registryReadAbi, functionName: 'getSubregistry', args: [scope.label] }),
+    client.getLogs({
+      address: scope.registry,
+      event: registryEventAbi[0],
+      args: { labelHash },
+      fromBlock,
+      toBlock,
+    }),
+    client.getLogs({
+      address: scope.registry,
+      event: registryEventAbi[1],
+      args: { labelHash },
+      fromBlock,
+      toBlock,
+    }),
+  ])
+  const tokenIds = new Set([...registrationLogs, ...reservationLogs].map(log => log.args.tokenId).filter(id => id !== undefined && id !== 0n))
+  const sortedLifecycle = [...registrationLogs, ...reservationLogs].sort((left, right) => {
+    if (left.blockNumber !== right.blockNumber) return left.blockNumber < right.blockNumber ? -1 : 1
+    return left.logIndex < right.logIndex ? -1 : left.logIndex > right.logIndex ? 1 : 0
+  })
+  const latestTokenId = sortedLifecycle.at(-1)?.args.tokenId
+  if (latestTokenId && latestTokenId !== 0n) tokenIds.add(latestTokenId)
+
+  const uncheckedTokenIds = [...tokenIds]
+  const checkedTokenIds = new Set()
+  while (uncheckedTokenIds.length > 0) {
+    const tokenId = uncheckedTokenIds.pop()
+    if (checkedTokenIds.has(tokenId)) continue
+    checkedTokenIds.add(tokenId)
+    const [forward, backward] = await Promise.all([
+      client.getLogs({ address: scope.registry, event: registryEventAbi[2], args: { oldTokenId: tokenId }, fromBlock, toBlock }),
+      client.getLogs({ address: scope.registry, event: registryEventAbi[2], args: { newTokenId: tokenId }, fromBlock, toBlock }),
+    ])
+    for (const log of forward) {
+      const next = log.args.newTokenId
+      if (!tokenIds.has(next)) {
+        tokenIds.add(next)
+        uncheckedTokenIds.push(next)
+      }
+    }
+    for (const log of backward) {
+      const previous = log.args.oldTokenId
+      if (!tokenIds.has(previous)) {
+        tokenIds.add(previous)
+        uncheckedTokenIds.push(previous)
+      }
+    }
+  }
+
+  const updates = (await Promise.all([...tokenIds].map(tokenId => client.getLogs({
+    address: scope.registry,
+    event: registryEventAbi[3],
+    args: { tokenId },
+    fromBlock,
+    toBlock,
+  })))).flat().sort((left, right) => {
+    if (left.blockNumber !== right.blockNumber) return left.blockNumber < right.blockNumber ? -1 : 1
+    return left.logIndex < right.logIndex ? -1 : left.logIndex > right.logIndex ? 1 : 0
+  })
+
+  const history = updates.map(log => ({
+    tokenId: log.args.tokenId.toString(),
+    subregistry: log.args.subregistry,
+    sender: log.args.sender,
+    blockNumber: log.blockNumber.toString(),
+    transactionHash: log.transactionHash,
+    logIndex: log.logIndex,
+  }))
+  const subregistries = new Map()
+  for (const update of history) {
+    // A zero-address update detaches the current subregistry and is retained
+    // in history, but it is not itself a subregistry contract.
+    if (update.subregistry === zeroAddress) continue
+    const key = update.subregistry.toLowerCase()
+    const item = subregistries.get(key) || {
+      address: update.subregistry,
+      firstUpdatedAt: { blockNumber: update.blockNumber, transactionHash: update.transactionHash, logIndex: update.logIndex },
+      lastUpdatedAt: undefined,
+      updateCount: 0,
+      currentlyAttached: update.subregistry.toLowerCase() === currentSubregistry.toLowerCase(),
+    }
+    item.lastUpdatedAt = { blockNumber: update.blockNumber, transactionHash: update.transactionHash, logIndex: update.logIndex }
+    item.updateCount += 1
+    subregistries.set(key, item)
+  }
+
+  return {
+    parent: scope.name,
+    registry: scope.registry,
+    label: scope.label,
+    status: registryStatus(status),
+    currentSubregistry: currentSubregistry === zeroAddress ? null : currentSubregistry,
+    fromBlock: fromBlock.toString(),
+    toBlock: toBlock.toString(),
+    subregistries: [...subregistries.values()],
+    history,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +510,7 @@ async function prepareDataWrite({ name, parent, from, resolver, dataRecord }) {
     metadata: {
       key: dataRecord.key,
       encodedValue: dataRecord.value,
+      value: dataRecord.value, // legacy compatibility field
       encoding: dataRecord.encoding,
       permission: hasRootPermission ? 'resolver-root-role' : 'data-key-role',
     },
@@ -387,6 +549,16 @@ async function prepareExistingSubchildData(body) {
   const resolver = await client.readContract({ address: scope.childRegistry, abi: registryReadAbi, functionName: 'getResolver', args: [scope.childLabel] })
   if (resolver === zeroAddress) throw fail(`${scope.name} has no resolver. Set one before writing data.`, 409)
   return prepareDataWrite({ name: scope.name, parent: scope.parentName, from, resolver, dataRecord: parseDataRecord(body.data) })
+}
+
+// These wrappers keep the subchild API explicit while reusing the same
+// authorization and active-name checks as the hierarchy-wide operations.
+async function prepareSubchildUnregistration(body) {
+  return prepareRevoke(body)
+}
+
+async function prepareSubchildDataUpdate(body) {
+  return prepareExistingSubchildData(body)
 }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +769,40 @@ async function verifyAuthChallenge(body) {
 }
 
 // ---------------------------------------------------------------------------
+// Startup configuration checks
+// ---------------------------------------------------------------------------
+
+async function startupChecks() {
+  const checks = []
+  try {
+    const block = await client.getBlockNumber()
+    checks.push({ name: 'ENS/Sepolia', ok: true, chainId: network.chain.id, block: block.toString() })
+  } catch (error) {
+    checks.push({ name: 'ENS/Sepolia', ok: false, error: error.shortMessage || error.message })
+  }
+
+  if (hisaabConfig.registry && hisaabConfig.receipt) {
+    try {
+      const block = await whitechainClient.getBlockNumber()
+      checks.push({ name: 'Whitechain', ok: true, chainId: hisaabConfig.wcChainId, block: block.toString() })
+    } catch (error) {
+      checks.push({ name: 'Whitechain', ok: false, error: error.shortMessage || error.message })
+    }
+  } else {
+    checks.push({ name: 'Whitechain', ok: false, error: 'Hisaab contracts not configured (set HISAAB_REGISTRY and HISAAB_RECEIPT).' })
+  }
+
+  console.log('Startup configuration status:')
+  for (const check of checks) {
+    const status = check.ok ? 'OK' : 'FAIL'
+    const detail = check.block ? ` (block ${check.block})` : ''
+    const err = check.error ? `: ${check.error}` : ''
+    console.log(`  ${status} ${check.name}${detail}${err}`)
+  }
+  return checks
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -605,6 +811,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return reply(res, 204, {})
 
   try {
+    // Hisaab routes are checked FIRST, before the ENS fallback.
     if (isHisaabRoute(url.pathname) && (await handleHisaab(req, res, url)) !== false) return
 
     // Status / connection check
@@ -669,6 +876,13 @@ const server = createServer(async (req, res) => {
       return reply(res, 200, await hierarchyStatus(normalize(parent), from))
     }
 
+    // Historical and current subregistry attachments for one ENSv2 name.
+    if (req.method === 'GET' && url.pathname === '/api/v1/ens/subregistries') {
+      const parent = url.searchParams.get('parent')
+      if (!parent) throw fail('Provide a parent query parameter.')
+      return reply(res, 200, await listParentSubregistries(parent, url.searchParams.get('fromBlock')))
+    }
+
     // Subname create / modify / revoke
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/children/create') return reply(res, 200, await prepareCreate(await readBody(req)))
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/children/modify') return reply(res, 200, await prepareModify(await readBody(req)))
@@ -676,6 +890,9 @@ const server = createServer(async (req, res) => {
 
     // Subchild registration and Permissioned Resolver data records.
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/register') return reply(res, 200, await prepareSubchildRegistration(await readBody(req)))
+    // Legacy aliases retained for base-style frontends.
+    if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/unregister') return reply(res, 200, await prepareSubchildUnregistration(await readBody(req)))
+    if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/update-data') return reply(res, 200, await prepareSubchildDataUpdate(await readBody(req)))
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/set-data') return reply(res, 200, await prepareExistingSubchildData(await readBody(req)))
 
     return reply(res, 404, { error: 'Unknown route. See README.md for the /api/v1/ens/ endpoint list.' })
@@ -685,4 +902,7 @@ const server = createServer(async (req, res) => {
   }
 })
 
-server.listen(port, () => console.log(`Hisaab ENSv2 API listening at http://localhost:${port}`))
+server.listen(port, async () => {
+  console.log(`Hisaab ENSv2 API listening at http://localhost:${port}`)
+  await startupChecks()
+})
