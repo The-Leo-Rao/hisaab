@@ -259,12 +259,27 @@ contracts.
 have `ROLE_SET_DATA` on the resolver, either globally or for that data key; the
 API checks this before returning `dataWrite`.
 
-### Write data on an existing subchild
+### Unregister a subchild
+
+```bash
+curl -X POST http://localhost:3000/api/v1/ens/subchildren/unregister \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "invoice.team.iownthis.eth",
+    "from": "0xROOT_PARENT_WALLET"
+  }'
+```
+
+This prepares an unsigned `UserRegistry.unregister(...)` transaction. The root-parent wallet must control the hierarchy and have its parent registry's `ROLE_UNREGISTER` permission.
+
+---
+
+### Update data on an existing subchild
 
 Use the resolver already attached to the active name:
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/ens/subchildren/set-data \
+curl -X POST http://localhost:3000/api/v1/ens/subchildren/update-data \
   -H 'content-type: application/json' \
   -d '{
     "name": "invoice.team.iownthis.eth",
@@ -280,6 +295,8 @@ curl -X POST http://localhost:3000/api/v1/ens/subchildren/set-data \
 This returns one unsigned resolver transaction. The parent hierarchy must be
 controlled by `from`, the name must be active with a resolver, and `from` must
 hold the resolver's required data-write role.
+
+`/api/v1/ens/subchildren/set-data` remains supported as an alias for existing clients.
 
 ---
 

@@ -388,6 +388,16 @@ async function prepareExistingSubchildData(body) {
   return prepareDataWrite({ name: scope.name, parent: scope.parentName, from, resolver, dataRecord: parseDataRecord(body.data) })
 }
 
+// These wrappers keep the subchild API explicit while reusing the same
+// authorization and active-name checks as the hierarchy-wide operations.
+async function prepareSubchildUnregistration(body) {
+  return prepareRevoke(body)
+}
+
+async function prepareSubchildDataUpdate(body) {
+  return prepareExistingSubchildData(body)
+}
+
 // ---------------------------------------------------------------------------
 // ENSv2 top-level .eth registration helpers
 // ---------------------------------------------------------------------------
@@ -671,8 +681,11 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/children/modify') return reply(res, 200, await prepareModify(await readBody(req)))
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/children/revoke') return reply(res, 200, await prepareRevoke(await readBody(req)))
 
-    // Subchild registration and Permissioned Resolver data records.
+    // Subchild registration, lifecycle, and Permissioned Resolver data records.
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/register') return reply(res, 200, await prepareSubchildRegistration(await readBody(req)))
+    if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/unregister') return reply(res, 200, await prepareSubchildUnregistration(await readBody(req)))
+    if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/update-data') return reply(res, 200, await prepareSubchildDataUpdate(await readBody(req)))
+    // Legacy spelling retained for existing API consumers.
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/set-data') return reply(res, 200, await prepareExistingSubchildData(await readBody(req)))
 
     return reply(res, 404, { error: 'Unknown route. See README.md for the /api/v1/ens/ endpoint list.' })
