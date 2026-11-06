@@ -1,0 +1,6 @@
+[submodule "HSB_Contract/contracts/lib/openzeppelin-contracts"]
+	path = HSB_Contract/contracts/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "HSB_Contract/contracts/lib/forge-std"]
+	path = HSB_Contract/contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
