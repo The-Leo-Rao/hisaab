@@ -31,10 +31,12 @@ const pub = createPublicClient({ chain, transport: http(RPC) })
 const log = (...a) => console.log(...a)
 
 const wallets = {}
+const forkKeys = {}
 for (const who of CONTROLLERS) {
   const k = process.env[`${who.toUpperCase()}_ENS_PK`] || (FORK ? generatePrivateKey() : null)
   if (!k) throw new Error(`Set ${who.toUpperCase()}_ENS_PK (a funded Sepolia key), or DEMO_FORK=1 on a local fork.`)
   wallets[who] = createWalletClient({ chain, transport: http(RPC), account: privateKeyToAccount(k) })
+  if (FORK) forkKeys[who] = k
   if (FORK) await pub.request({ method: 'anvil_setBalance', params: [wallets[who].account.address, '0x56BC75E2D63100000'] })
 }
 const addr = (who) => wallets[who].account.address
@@ -165,7 +167,7 @@ const out = {
   whitechainWallets: WC_WALLETS,
   contracts: { acmeRegistry, devRegistry, raviRegistry, acmeResolver, raviResolver, engagementResolver, contractorResolvers },
 }
-if (FORK) out.forkKeys = Object.fromEntries(CONTROLLERS.map((w) => [w, wallets[w].account.address]))
+if (FORK) out.forkKeys = forkKeys
 writeFileSync(new URL('../../.ens-demo.json', import.meta.url), JSON.stringify(out, null, 2))
 log('Done. Wrote .ens-demo.json')
 for (const n of ['acme-labs.eth', 'acme-q4.ravi-dev.eth', 'ravi.dev.acme-labs.eth']) {
