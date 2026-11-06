@@ -232,9 +232,25 @@ function labelId(label) {
 }
 
 function parseBlockNumber(value) {
-  if (value === null || value === undefined || value === '') return 0n
+  if (value === null || value === undefined || value === '') return null
   if (!/^(0|[1-9]\d*)$/.test(value)) throw fail('fromBlock must be a non-negative block number.')
   return BigInt(value)
+}
+
+const LOG_RANGE = BigInt(process.env.ENS_LOG_RANGE || 50000)
+const LOG_LOOKBACK = BigInt(process.env.ENS_LOG_LOOKBACK || 9000)
+
+async function getLogsChunked(params) {
+  const logs = []
+  for (let start = params.fromBlock; start <= params.toBlock; start += LOG_RANGE) {
+    const end = start + LOG_RANGE - 1n < params.toBlock ? start + LOG_RANGE - 1n : params.toBlock
+    try {
+      logs.push(...(await client.getLogs({ ...params, fromBlock: start, toBlock: end })))
+    } catch (error) {
+      throw fail(`The RPC could not return logs for blocks ${start}-${end} (${error.shortMessage || error.message}). Public RPCs prune old logs; pass a recent fromBlock or set an archive VITE_SEPOLIA_RPC_URL.`, 502)
+    }
+  }
+  return logs
 }
 
 function registryStatus(status) {
@@ -280,8 +296,9 @@ async function listParentSubregistries(parentInput, fromBlockInput) {
   const scope = await resolveRegistryEntry(parentInput)
   const resource = labelId(scope.label)
   const labelHash = keccak256(toHex(scope.label))
-  const fromBlock = parseBlockNumber(fromBlockInput)
   const toBlock = await client.getBlockNumber()
+  const requested = parseBlockNumber(fromBlockInput) ?? (process.env.ENS_FROM_BLOCK ? BigInt(process.env.ENS_FROM_BLOCK) : null)
+  const fromBlock = requested ?? (toBlock > LOG_LOOKBACK ? toBlock - LOG_LOOKBACK : 0n)
   if (fromBlock > toBlock) throw fail('fromBlock cannot be greater than the latest block.')
 
   // Label events seed every registration lifecycle for this label. Token IDs
@@ -292,14 +309,14 @@ async function listParentSubregistries(parentInput, fromBlockInput) {
   const [status, currentSubregistry, registrationLogs, reservationLogs] = await Promise.all([
     client.readContract({ address: scope.registry, abi: registryReadAbi, functionName: 'getStatus', args: [resource] }),
     client.readContract({ address: scope.registry, abi: registryReadAbi, functionName: 'getSubregistry', args: [scope.label] }),
-    client.getLogs({
+    getLogsChunked({
       address: scope.registry,
       event: registryEventAbi[0],
       args: { labelHash },
       fromBlock,
       toBlock,
     }),
-    client.getLogs({
+    getLogsChunked({
       address: scope.registry,
       event: registryEventAbi[1],
       args: { labelHash },
@@ -322,8 +339,8 @@ async function listParentSubregistries(parentInput, fromBlockInput) {
     if (checkedTokenIds.has(tokenId)) continue
     checkedTokenIds.add(tokenId)
     const [forward, backward] = await Promise.all([
-      client.getLogs({ address: scope.registry, event: registryEventAbi[2], args: { oldTokenId: tokenId }, fromBlock, toBlock }),
-      client.getLogs({ address: scope.registry, event: registryEventAbi[2], args: { newTokenId: tokenId }, fromBlock, toBlock }),
+      getLogsChunked({ address: scope.registry, event: registryEventAbi[2], args: { oldTokenId: tokenId }, fromBlock, toBlock }),
+      getLogsChunked({ address: scope.registry, event: registryEventAbi[2], args: { newTokenId: tokenId }, fromBlock, toBlock }),
     ])
     for (const log of forward) {
       const next = log.args.newTokenId
@@ -341,7 +358,7 @@ async function listParentSubregistries(parentInput, fromBlockInput) {
     }
   }
 
-  const updates = (await Promise.all([...tokenIds].map(tokenId => client.getLogs({
+  const updates = (await Promise.all([...tokenIds].map(tokenId => getLogsChunked({
     address: scope.registry,
     event: registryEventAbi[3],
     args: { tokenId },
