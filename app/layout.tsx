@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { Providers } from "./providers";
+import { AppShell } from "@/components/AppShell";
 import "./globals.css";
 
 const instrument = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-instrument" });
@@ -16,7 +18,11 @@ export const viewport: Viewport = { themeColor: "#f6f1e6" };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${instrument.variable} ${geist.variable} ${geistMono.variable}`}>
-      <body className="grain">{children}</body>
+      <body className="grain">
+        <Providers>
+          <AppShell>{children}</AppShell>
+        </Providers>
+      </body>
     </html>
   );
 }
