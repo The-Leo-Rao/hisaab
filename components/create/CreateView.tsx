@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { Copy, ExternalLink, FileDown, Plus, Repeat2, ShieldCheck, TriangleAlert, X } from "lucide-react";
+import { Copy, ExternalLink, FileDown, KeyRound, Plus, Repeat2, ShieldCheck, TriangleAlert, X } from "lucide-react";
 import { isAddress, type Address } from "viem";
 import { toast } from "sonner";
 import { buildInvoice, docHash, explainError, formatMoney, lineAmount, payLink, randomSalt, totalUnits, type InvoiceDoc } from "@hisaab/core";
 import { useHisaab } from "@/lib/hisaab";
-import { downloadPdf } from "@/lib/api";
-import { saveDoc, saveTemplate, loadTemplate } from "@/lib/store";
+import { downloadSealedPdf, nameSaltFor, newKey } from "@/lib/sealed";
+import { loadNameSalt, saveDoc, saveTemplate, loadTemplate } from "@/lib/store";
 import { group, same } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { PageTitle } from "@/components/AppShell";
@@ -111,7 +111,7 @@ function defaults(mode: Mode, ctx: Ctx): Form {
   };
 }
 
-type Created = { id: bigint; link: string; hash: string; txHash: string; doc: InvoiceDoc };
+type Created = { id: bigint; link: string; hash: string; txHash: string; doc: InvoiceDoc; key: string };
 
 function Printed({ children }: { children: React.ReactNode }) {
   const reduced = useReducedMotion();
@@ -163,11 +163,12 @@ export function CreateView() {
       const issueDate = today();
       const days = Math.max(1, Number(f.dueDays) || 1);
       const client = !f.open && isAddress(f.client) ? (f.client as Address) : undefined;
+      const nameSalt = me && f.issuerName ? loadNameSalt(me, f.issuerName) : null;
       const doc = buildInvoice({
         invoiceNumber: f.invoiceNumber,
         issueDate,
         dueDate: addDays(issueDate, days),
-        supplier: { legalName: f.supplierName, ens: f.issuerName || undefined, wallet: me ?? undefined },
+        supplier: { legalName: f.supplierName, ens: f.issuerName || undefined, wallet: me ?? undefined, ...(nameSalt ? { nameSalt } : {}) },
         customer: { legalName: f.customerName, ens: f.clientName || undefined, wallet: client },
         lines: f.lines.map((l) => ({ description: l.description, qty: Number(l.qty), unitPrice: l.unitPrice || "0" })),
         settlement: { chainId: cfg.chainId, registry: cfg.registry, token: cfg.usdt },
@@ -194,27 +195,40 @@ export function CreateView() {
   async function submit() {
     if (!cfg || !signer || !me || !draft.doc || !hash) return;
     setError(null);
-    const s: Step[] = [{ label: "Record the invoice hash on Whitechain", state: "active" }];
+    const s: Step[] = [
+      { label: "Sign your name secret (it stays in this browser)", state: "active" },
+      { label: "Record the sealed invoice on Whitechain", state: "todo" },
+    ];
     setSteps([...s]);
+    let i = 0;
     try {
+      const nameSalt = await nameSaltFor(signer, f.issuerName);
+      const doc: InvoiceDoc = { ...draft.doc, supplier: { ...draft.doc.supplier, nameSalt } };
+      const sealedHash = docHash(doc);
+      s[0] = { ...s[0], state: "done" };
+      s[1] = { ...s[1], state: "active" };
+      setSteps([...s]);
+      i = 1;
       const days = Math.max(1, Number(f.dueDays) || 1);
       const r = await cfg.hisaab.createInvoice(signer, {
         client: f.open ? undefined : (f.client as Address),
-        amount: totalUnits(draft.doc),
+        amount: totalUnits(doc),
         dueDate: BigInt(Math.floor(Date.now() / 1000) + days * 86_400),
-        docHash: hash,
+        docHash: sealedHash,
         issuerName: f.issuerName,
         clientName: f.clientName,
+        salt: doc.salt,
       });
-      s[0] = { ...s[0], state: "done", hash: r.txHash };
+      s[1] = { ...s[1], state: "done", hash: r.txHash };
       setSteps([...s]);
-      saveDoc(hash, draft.doc);
+      saveDoc(sealedHash, doc);
       saveTemplate(me, mode, f);
-      setCreated({ id: r.id, link: await payLink(window.location.origin, r.id, draft.doc), hash, txHash: r.txHash, doc: draft.doc });
+      const key = newKey(r.id, sealedHash);
+      setCreated({ id: r.id, link: await payLink(window.location.origin, r.id, doc, key), hash: sealedHash, txHash: r.txHash, doc, key });
       setSalt(randomSalt());
       refresh();
     } catch (e) {
-      s[0] = { ...s[0], state: "error" };
+      s[i] = { ...s[i], state: "error" };
       setSteps([...s]);
       setError(explainError(e));
     }
@@ -240,7 +254,19 @@ export function CreateView() {
           <div>
             <div className="label mb-1">Pay link</div>
             <p className="num rounded-sm bg-paper-2/70 p-3 text-[13px] break-all text-ink-2">{created.link}</p>
-            <p className="mt-2 text-sm text-ink-3">Everything after # stays in the browser. It never reaches a server.</p>
+            <p className="mt-2 text-sm text-ink-3">Everything after # stays in the browser. It never reaches a server. The link carries the invoice and its key, so send it only to your client.</p>
+          </div>
+          <div>
+            <div className="label mb-1">Invoice key</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="num rounded-sm bg-paper-2/70 px-3 py-2 text-[15px] tracking-wide break-all text-ink">{created.key}</p>
+              <Button variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(created.key).then(() => toast("Invoice key copied"))}>
+                <KeyRound /> Copy key
+              </Button>
+            </div>
+            <p className="mt-2 text-sm text-ink-3">
+              Onchain, this invoice shows an amount and a status, nothing about who it is between. To prove it to a CA or a bank, send the sealed PDF and this key separately. Either one alone reveals nothing. Hisaab doesn&apos;t keep a copy.
+            </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <Button onClick={() => navigator.clipboard.writeText(created.link).then(() => toast("Pay link copied"))}>
@@ -253,12 +279,12 @@ export function CreateView() {
             </Button>
             <Button
               variant="secondary"
-              onClick={() => downloadPdf("/invoice-pdf", { id: created.id.toString(), document: created.doc }, `invoice-${created.id}.pdf`).catch((e) => toast.error(e.message))}
+              onClick={() => downloadSealedPdf(created.id, created.doc, created.key).catch((e) => toast.error(e.message))}
             >
-              <FileDown /> Download Invoice PDF
+              <FileDown /> Download sealed PDF
             </Button>
             <Button variant="secondary" asChild>
-              <Link href={`/verify/${created.id}${path.hash}`}>
+              <Link href={`/verify/${created.id}`}>
                 <ShieldCheck /> Verify page
               </Link>
             </Button>
@@ -283,7 +309,7 @@ export function CreateView() {
     <div>
       <PageTitle
         title={<>New <em>invoice</em></>}
-        sub="Only a fingerprint of this invoice goes onchain. The document travels with the link."
+        sub="Only a fingerprint goes onchain, with no names. The document travels with the link, sealed by a key only you hand out."
         right={
           last ? (
             <Button variant="secondary" onClick={() => setF(repeat(mode, last))}>
