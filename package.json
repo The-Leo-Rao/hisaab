@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "api": "node --env-file-if-exists=.env server.mjs",
-    "cli": "node --env-file-if-exists=.env cli.mjs"
+    "cli": "node --env-file-if-exists=.env cli.mjs",
+    "demo:ens": "node --env-file-if-exists=.env hisaab/scripts/setup-demo.mjs",
+    "demo:act": "node --env-file-if-exists=.env hisaab/scripts/demo-act.mjs",
+    "check": "node --env-file-if-exists=.env hisaab/scripts/check-endpoints.mjs"
   },
   "dependencies": {
     "canonicalize": "^2.1.0",
