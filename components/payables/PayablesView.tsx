@@ -8,6 +8,10 @@ import { useHisaab } from "@/lib/hisaab";
 import { dur, stagger } from "@/lib/motion";
 import { longDate, middle, toNumber, usdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { loadDoc } from "@/lib/store";
+
+const issuerOf = (i: OnchainInvoice) => loadDoc(i.docHash)?.supplier.ens || i.issuerName || "";
+const whoOf = (i: OnchainInvoice) => issuerOf(i) || middle(i.issuer);
 import { PageTitle } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -74,7 +78,7 @@ export function PayablesView() {
       const overdue = await Promise.all(list.map((i) => cfg.hisaab.isOverdue(i.id)));
       setRows(list.map((inv, i) => ({ inv, overdue: overdue[i] })).reverse());
       const paidOnes = list.filter((i) => i.paid > 0n).slice(-8);
-      const pays = await Promise.all(paidOnes.map(async (i) => (await cfg.hisaab.payments(i.id)).map((p) => ({ id: i.id.toString(), who: i.issuerName || middle(i.issuer), amount: p.amount, txHash: p.txHash, key: p.txHash, block: p.blockNumber }))));
+      const pays = await Promise.all(paidOnes.map(async (i) => (await cfg.hisaab.payments(i.id)).map((p) => ({ id: i.id.toString(), who: whoOf(i), amount: p.amount, txHash: p.txHash, key: p.txHash, block: p.blockNumber }))));
       setEvents((cur) => (cur.length ? cur : pays.flat().sort((a, b) => Number(b.block - a.block)).slice(0, 8)));
       setError(null);
     } catch (e) {
@@ -129,7 +133,7 @@ export function PayablesView() {
           n.delete(k);
           return n;
         });
-        setEvents((ev) => [{ id: k, who: r.inv.issuerName || middle(r.inv.issuer), amount: amt, txHash: res.txHash, key: res.txHash }, ...ev].slice(0, 12));
+        setEvents((ev) => [{ id: k, who: whoOf(r.inv), amount: amt, txHash: res.txHash, key: res.txHash }, ...ev].slice(0, 12));
         setPaying({ total: list.length, done: i + 1, amount: paidSoFar, phase: "" });
       }
       setTimeout(() => {
@@ -222,8 +226,8 @@ export function PayablesView() {
                         <span className="num">#{k}</span>
                       </Cell>
                       <Cell label="From">
-                        <span className="block font-medium break-all">{r.inv.issuerName || middle(r.inv.issuer)}</span>
-                        {r.inv.issuerName && <Role name={r.inv.issuerName} />}
+                        <span className="block font-medium break-all">{whoOf(r.inv)}</span>
+                        {issuerOf(r.inv) && <Role name={issuerOf(r.inv)} />}
                       </Cell>
                       <Cell label="Amount" right>
                         <Amount units={isPayable(r.inv) ? remaining(r.inv) : r.inv.amount} size="sm" unit={false} />
