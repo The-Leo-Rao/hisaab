@@ -662,6 +662,19 @@ export const receiptAbi = [
   },
   {
     "type": "function",
+    "name": "SINK",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "approve",
     "inputs": [
       {
@@ -696,19 +709,6 @@ export const receiptAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "burn",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -789,11 +789,6 @@ export const receiptAbi = [
     "type": "function",
     "name": "mint",
     "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
       {
         "name": "id",
         "type": "uint256",
@@ -1207,11 +1202,6 @@ export const receiptAbi = [
         "internalType": "uint256"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "NotHolder",
-    "inputs": []
   },
   {
     "type": "error",
