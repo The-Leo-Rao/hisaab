@@ -1,7 +1,8 @@
 import { writeFileSync } from 'node:fs'
-import { createPublicClient, createWalletClient, encodeFunctionData, http, maxUint256, parseAbi, parseEventLogs, toHex } from 'viem'
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
+import { createPublicClient, createWalletClient, encodeFunctionData, http, keccak256, maxUint256, parseAbi, parseEventLogs, toHex } from 'viem'
+import { generatePrivateKey, mnemonicToAccount, privateKeyToAccount } from 'viem/accounts'
 import { sepolia } from 'viem/chains'
+import { nameSecretMessage, walletCommitment } from '../commit.mjs'
 
 const RPC = process.env.ENS_RPC || 'http://127.0.0.1:8546'
 const API = (process.env.API || 'http://localhost:3000').replace(/\/$/, '')
@@ -13,6 +14,22 @@ const WC_WALLETS = {
   priya: process.env.WC_PRIYA || '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
   arjun: process.env.WC_ARJUN || '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
 }
+const DEV_INDEX = { ravi: 1, acme: 2, priya: 3, arjun: 4 }
+const MNEMONIC = 'test test test test test test test test test test test junk'
+
+function issuerAccount(who) {
+  const k = process.env[`WC_${who.toUpperCase()}_PK`]
+  const account = k ? privateKeyToAccount(k) : mnemonicToAccount(MNEMONIC, { addressIndex: DEV_INDEX[who] })
+  if (account.address.toLowerCase() !== WC_WALLETS[who].toLowerCase()) throw new Error(`Set WC_${who.toUpperCase()}_PK for ${WC_WALLETS[who]} so its name secret can be derived.`)
+  return account
+}
+
+async function sealedWallet(who, name) {
+  const account = issuerAccount(who)
+  const nameSalt = keccak256(await account.signMessage({ message: nameSecretMessage(name) }))
+  return walletCommitment(account.address, nameSalt)
+}
+
 const CONTROLLERS = ['acme', 'ravi']
 
 const FACTORY = '0xda70306c98e97ece36f997a21368e53298572991'
@@ -145,12 +162,12 @@ await child('ravi', 'acme-q4.ravi-dev.eth', { resolver: engagementResolver, expi
 log('5. Hisaab records (hisaab ens/records -> teammate subchildren/set-data for subnames)')
 const reg = `${status.whitechain.chainId}:${status.whitechain.registry}`
 await records('acme', { name: 'acme-labs.eth', records: [{ key: 'hisaab.wallet', value: WC_WALLETS.acme }, { key: 'hisaab.registry', value: reg }] })
-await records('ravi', { name: 'ravi-dev.eth', records: [{ key: 'hisaab.wallet', value: WC_WALLETS.ravi }, { key: 'hisaab.registry', value: reg }] })
+await records('ravi', { name: 'ravi-dev.eth', records: [{ key: 'hisaab.wallet', value: await sealedWallet('ravi', 'ravi-dev.eth') }, { key: 'hisaab.registry', value: reg }] })
 const roles = { ravi: 'Software Engineer, contract', priya: 'Product Designer, contract', arjun: 'QA Engineer, contract' }
 for (const who of ['ravi', 'priya', 'arjun']) {
-  await records('acme', { name: `${who}.dev.acme-labs.eth`, kind: 'contractor', issuer: WC_WALLETS[who], employer: 'acme-labs.eth', role: roles[who] })
+  await records('acme', { name: `${who}.dev.acme-labs.eth`, kind: 'contractor', walletCommitment: await sealedWallet(who, `${who}.dev.acme-labs.eth`), employer: 'acme-labs.eth', role: roles[who] })
 }
-await records('ravi', { name: 'acme-q4.ravi-dev.eth', kind: 'freelance', issuer: WC_WALLETS.ravi, client: 'acme-labs.eth' })
+await records('ravi', { name: 'acme-q4.ravi-dev.eth', kind: 'freelance', walletCommitment: await sealedWallet('ravi', 'acme-q4.ravi-dev.eth'), client: 'acme-labs.eth' })
 
 log('6. Let the client acknowledge invoices on the engagement name')
 await send('ravi', await api('/api/v1/hisaab/ens/client-role', { name: 'acme-q4.ravi-dev.eth', from: addr('ravi'), client: addr('acme') }), 'grant acme hisaab.approved')
