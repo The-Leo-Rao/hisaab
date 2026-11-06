@@ -16,12 +16,12 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"],
-      "@hisaab/core": ["../HSB_Contract/packages/hisaab-core/src/index.ts"],
-      "@hisaab/core/relay": ["../HSB_Contract/packages/hisaab-core/src/relay.ts"],
+      "@hisaab/core": ["./HSB_Contract/packages/hisaab-core/src/index.ts"],
+      "@hisaab/core/relay": ["./HSB_Contract/packages/hisaab-core/src/relay.ts"],
       "viem": ["./node_modules/viem"],
       "viem/*": ["./node_modules/viem/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "HSB_Contract"]
 }
