@@ -78,10 +78,10 @@ export async function readName(input, keys = HISAAB_KEYS) {
     read(registry, registryAbi, 'findExpiry', [leaf]),
     read(registry, registryAbi, 'getResolver', [leaf]),
   ])
-  const now = BigInt(Math.floor(Date.now() / 1000))
+  const now = (await ens.getBlock()).timestamp
   let status = STATUS[statusCode] ?? `status-${statusCode}`
   if (status === 'registered' && expiry > 0n && expiry <= now) status = 'expired'
-  if (status === 'available' && expiry > 0n && expiry <= now) status = 'expired'
+  if (status === 'available' && expiry > 0n) status = 'expired'
   const node = namehash(name)
   const records = {}
   let addr = null
