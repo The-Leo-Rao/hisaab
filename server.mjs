@@ -348,7 +348,7 @@ async function prepareDataWrite({ name, parent, from, resolver, dataRecord }) {
     data,
     metadata: {
       key: dataRecord.key,
-      value: dataRecord.value,
+      encodedValue: dataRecord.value,
       encoding: dataRecord.encoding,
       permission: hasRootPermission ? 'resolver-root-role' : 'data-key-role',
     },
