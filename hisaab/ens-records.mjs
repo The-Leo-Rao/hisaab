@@ -1,12 +1,11 @@
-import { encodeFunctionData, isAddress, keccak256, parseAbi, stringToHex, toHex } from 'viem'
+import { encodeFunctionData, isAddress, parseAbi, stringToHex, toHex } from 'viem'
 import { packetToBytes } from 'viem/ens'
 import { config } from './config.mjs'
 import { ens, normalizeName, readName } from './ens-read.mjs'
 
-const ROLE_SET_DATA = 1n << 24n
 const resolverAbi = parseAbi([
   'function setData(bytes name, string key, bytes value)',
-  'function grantRoles(uint256 resource, uint256 roleBitmap, address account) returns (bool)',
+  'function grantSetterRoles(bytes setter, address account) returns (bool)',
 ])
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status })
@@ -82,8 +81,8 @@ export async function prepareClientApprovalRole({ name, from, client }) {
   if (!n) throw fail('name must be a valid ENS name.')
   if (!isAddress(from) || !isAddress(client)) throw fail('from and client must be addresses.')
   const resolver = await resolverFor(n)
-  const resource = BigInt(keccak256(stringToHex('hisaab.approved')))
-  const data = encodeFunctionData({ abi: resolverAbi, functionName: 'grantRoles', args: [resource, ROLE_SET_DATA, client] })
+  const setter = encodeFunctionData({ abi: resolverAbi, functionName: 'setData', args: ['0x', 'hisaab.approved', '0x'] })
+  const data = encodeFunctionData({ abi: resolverAbi, functionName: 'grantSetterRoles', args: [setter, client] })
   return tx('grant-client-approval', n, from, resolver, data, { client, key: 'hisaab.approved' })
 }
 
