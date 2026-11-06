@@ -1,6 +1,6 @@
 import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, rgb, StandardFonts } from 'pdf-lib'
 import { config, verifyUrl } from './config.mjs'
-import { canonical, longDate, money } from './invoice.mjs'
+import { longDate, money } from './invoice.mjs'
 import { qrPng } from './qr.mjs'
 
 const W = 595.28
@@ -111,11 +111,11 @@ async function band(p, title, subtitle, id) {
   p.y = H - 178
 }
 
-async function attachAll(doc, id, document) {
+async function attachAll(doc, id, sealed) {
   const meta = { chainId: config.wcChainId, registry: config.registry, id: Number(id) }
   await doc.attach(new TextEncoder().encode(JSON.stringify(meta)), 'hisaab-meta.json', { mimeType: 'application/json', description: 'Which invoice to look up' })
-  if (document) {
-    await doc.attach(new TextEncoder().encode(canonical(document)), 'invoice.json', { mimeType: 'application/json', description: 'Canonical invoice JSON (hashed onchain)' })
+  if (sealed) {
+    await doc.attach(new TextEncoder().encode(JSON.stringify(sealed)), 'invoice.enc', { mimeType: 'application/json', description: 'Invoice details, AES-256-GCM. Open with the invoice key.' })
   }
 }
 
@@ -147,10 +147,13 @@ export async function statementPdf(result, document) {
   await band(p, 'Statement of payment', `Invoice #${result.id} on ${result.chain.chainId === 1874 ? 'Whitechain Sepolia' : `chain ${result.chain.chainId}`}`, result.id)
 
   const tone = Object.fromEntries(result.checks.map((c) => [c.key, c.tone]))
+  const locked = result.sealed && !result.unlocked
   const onchainOnly = !result.verified && tone.hash === 'grey' && tone.issuer === 'green' && tone.payment === 'green'
-  const verdictColor = result.verified ? C.green : onchainOnly ? C.green : result.checks.some((c) => c.tone === 'red') ? C.red : C.amber
-  const title = result.verified ? 'VERIFIED' : onchainOnly ? 'VERIFIED ONCHAIN · DOCUMENT NOT ATTACHED' : 'NOT FULLY VERIFIED'
-  const note = result.summary || (onchainOnly
+  const verdictColor = result.verified ? C.green : locked ? (tone.payment === 'green' ? C.green : C.grey) : onchainOnly ? C.green : result.checks.some((c) => c.tone === 'red') ? C.red : C.amber
+  const title = result.verified ? 'VERIFIED' : locked ? 'SEALED · PUBLIC FACTS ONLY' : onchainOnly ? 'VERIFIED ONCHAIN · DOCUMENT NOT ATTACHED' : 'NOT FULLY VERIFIED'
+  const note = result.summary || (locked
+    ? 'Who this invoice is between is sealed. The payment facts below are public onchain. Drop the invoice PDF on the verify page with its invoice key to check the parties.'
+    : onchainOnly
     ? 'Issuer and payment check out onchain. Attach the invoice (or drop its PDF on the verify page) to also prove the document itself.'
     : 'One or more checks below are not green. Read each row before relying on this invoice.')
   const lines = []
@@ -173,8 +176,8 @@ export async function statementPdf(result, document) {
   p.kv([
     ['Invoice number', document?.invoiceNumber ?? '(document not supplied)'],
     ['Amount', `${inv.amountText} USDT`],
-    ['Issued by (ENS)', inv.issuerName || '-'],
-    ['Billed to (ENS)', inv.clientName || '-'],
+    ['Issued by (ENS)', inv.issuerName || document?.supplier?.ens || (result.sealed ? 'Sealed' : '-')],
+    ['Billed to (ENS)', inv.clientName || document?.customer?.ens || (result.sealed ? 'Sealed' : '-')],
     ['Supplier', document?.supplier?.legalName ?? '-'],
     ['Customer', document?.customer?.legalName ?? '-'],
     ['Created onchain', longDate(inv.createdAt)],
@@ -206,7 +209,7 @@ export async function statementPdf(result, document) {
   if (!result.payments.length) p.wrap('No payments recorded.', M, W - 2 * M, { size: 9.5, color: C.muted })
   for (const pay of result.payments) {
     p.ensure(34)
-    p.text(`${money(pay.amount)} USDT from ${short(pay.payer, 8)}${pay.gasless ? '  (gasless)' : ''}`, M, p.y, { size: 10, font: fonts.bold })
+    p.text(`${money(pay.amount)} USDT${pay.payer ? ` from ${short(pay.payer, 8)}` : ''}${pay.gasless ? '  (gasless)' : ''}`, M, p.y, { size: 10, font: fonts.bold })
     p.y -= 13
     p.text(`tx ${pay.txHash}`, M, p.y, { size: 7.5, font: fonts.mono, color: C.muted })
     p.y -= 11
@@ -215,7 +218,7 @@ export async function statementPdf(result, document) {
   }
   for (const r of result.refunds || []) {
     p.ensure(24)
-    p.text(`Refund ${money(r.amount)} USDT to ${short(r.to, 8)}  tx ${short(r.txHash, 12)}`, M, p.y, { size: 9, color: C.amber })
+    p.text(`Refund ${money(r.amount)} USDT${r.to ? ` to ${short(r.to, 8)}` : ''}  tx ${short(r.txHash, 12)}`, M, p.y, { size: 9, color: C.amber })
     p.y -= 16
   }
 
@@ -223,54 +226,44 @@ export async function statementPdf(result, document) {
   p.kv([
     ['Registry (Whitechain)', short(result.chain.registry, 12)],
     ['Document hash (onchain)', short(inv.docHash, 12)],
-    ['Receipt NFT', result.receipt.exists ? `#${result.id} held by ${short(result.receipt.owner, 8)}` : 'none'],
-    ['Issuer wallet', short(inv.issuer, 10)],
-    ['ENS issuer status', `${result.ens.issuer?.status ?? '-'}${result.ens.issuer?.expiry ? `, expires ${longDate(result.ens.issuer.expiry)}` : ''}`],
-    ['ENS employer', result.ens.issuer?.records?.['hisaab.employer'] ?? '-'],
+    ['Receipt NFT', result.receipt.exists ? `#${result.id} minted (held by a dead address)` : 'none'],
+    ['Issuer wallet', inv.issuer ? short(inv.issuer, 10) : 'Sealed'],
+    ['ENS issuer status', `${result.ens.issuer?.status ?? (locked ? 'Sealed' : '-')}${result.ens.issuer?.expiry ? `, expires ${longDate(result.ens.issuer.expiry)}` : ''}`],
+    ['ENS employer', result.ens.issuer?.records?.['hisaab.employer'] ?? (locked ? 'Sealed' : '-')],
   ])
 
   p.ensure(60)
   p.y -= 6
   p.wrap(`Verify live: ${verifyUrl(result.id)}`, M, W - 2 * M, { size: 9, font: fonts.bold })
   p.wrap(
-    `Generated ${new Date(result.checkedAt).toUTCString()}. This statement shows that a payment was received against this invoice and who issued it. It does not prove the work was done, the counterparty's identity beyond ENS, or tax treatment. The invoice JSON and lookup metadata are attached to this PDF.`,
+    `Generated ${new Date(result.checkedAt).toUTCString()}. This statement shows that a payment was received against this invoice and who issued it. It does not prove the work was done, the counterparty's identity beyond ENS, or tax treatment.${document ? ' It includes the private invoice details, so share it with care.' : ''}`,
     M, W - 2 * M, { size: 7.5, color: C.muted },
   )
-  await attachAll(doc, result.id, document)
+  await attachAll(doc, result.id)
   return doc.save()
 }
 
-export async function invoicePdf(id, document, inv) {
-  const { doc, fonts } = await base(`Invoice ${document.invoiceNumber}`)
+export async function invoicePdf(id, sealed, inv) {
+  const { doc, fonts } = await base(`Hisaab invoice #${id} (sealed)`)
   const p = new Page(doc, fonts)
-  await band(p, 'Tax Invoice', `${document.invoiceNumber} - issued ${document.issueDate}, due ${document.dueDate}`, id)
-  p.heading('From / To')
+  await band(p, 'Sealed invoice', `Invoice #${id} on Whitechain. Details are encrypted inside this PDF.`, id)
+  p.heading('Public facts (onchain)')
   p.kv([
-    ['Supplier', document.supplier?.legalName],
-    ['Customer', document.customer?.legalName],
-    ['Supplier ENS', document.supplier?.ens],
-    ['Customer ENS', document.customer?.ens],
-    ['Supplier wallet', short(document.supplier?.wallet, 10)],
-    ['Customer wallet', short(document.customer?.wallet, 10)],
+    ['Invoice', `#${id}`],
+    ['Status', inv.status],
+    ['Amount', `${money(inv.amount)} USDT`],
+    ['Paid', inv.paid > 0n ? `${money(inv.paid)} USDT` : 'not yet'],
+    ['Created', longDate(inv.createdAt)],
+    ['Due', longDate(inv.dueDate)],
   ])
-  if (document.engagement?.kind === 'contract-employee') {
-    p.kv([
-      ['Employer', document.engagement.employer],
-      ['Role / period', `${document.engagement.role || '-'} (${document.engagement.periodFrom || '?'} to ${document.engagement.periodTo || '?'})`],
-    ])
-  }
-  p.heading('Items')
-  lineTable(p, document)
-  for (const w of document.warnings || []) p.wrap(`Note: ${w}`, M, W - 2 * M, { size: 8, color: C.amber })
-  p.heading('Settlement')
-  p.kv([
-    ['Pay in', `USDT on chain ${document.settlement?.chainId}`],
-    ['Amount (units)', document.settlement?.amountUnits],
-    ['Registry', short(document.settlement?.registry, 12)],
-    ['Invoice id', `#${id}${inv ? ` (${inv.status})` : ''}`],
-  ])
-  p.wrap(`Verify at ${verifyUrl(id)}. The QR code opens the same page. The canonical invoice JSON is attached to this PDF; its keccak256 hash is stored onchain.`, M, W - 2 * M, { size: 8.5, color: C.muted })
-  await attachAll(doc, id, document)
+  p.kv([['Document fingerprint', short(inv.docHash, 12)], ['Registry', short(config.registry, 12)]])
+  p.heading('Who it is between')
+  p.wrap('Sealed. The parties, their ENS names, wallets and line items are encrypted inside this file (AES-256-GCM).', M, W - 2 * M, { size: 10.5, font: fonts.bold })
+  p.y -= 4
+  p.wrap(`To read them, open ${verifyUrl(id)}, drop this PDF and enter the invoice key (it starts with HSB${id}-). The issuer shares the key separately. This PDF alone, or the key alone, shows nothing beyond the facts above.`, M, W - 2 * M, { size: 9.5 })
+  p.y -= 10
+  p.wrap('The key is checked in your browser. The decrypted invoice is then compared with the fingerprint stored onchain, so a changed or swapped document shows up as a red check.', M, W - 2 * M, { size: 8.5, color: C.muted })
+  await attachAll(doc, id, sealed)
   return doc.save()
 }
 
