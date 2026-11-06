@@ -113,6 +113,28 @@ Returns `committedAt`, `minCommitmentAge`, `remainingSeconds`, and `canReveal`.
 
 ---
 
+### Verify ENS wallet ownership for sign-in
+
+Request a single-use, five-minute challenge for the ENS name and wallet:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/ens/auth/challenge \
+  -H 'content-type: application/json' \
+  -d '{"name":"myname.eth","address":"0xWALLET"}'
+```
+
+Sign the returned `message` with that wallet (for example, with `walletClient.signMessage({ account, message })`), then submit the signature:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/ens/auth/verify \
+  -H 'content-type: application/json' \
+  -d '{"challengeId":"0xCHALLENGE_ID","signature":"0xSIGNATURE"}'
+```
+
+The response has `verified: true` only when the signature recovers to the challenged wallet and that wallet is the current ENSv2 owner of the name on the configured network. Challenges expire after five minutes and can be used once. The challenge store is in memory, so outstanding challenges are cleared when the API process restarts.
+
+---
+
 ### Prepare reveal/register transaction
 
 ```bash

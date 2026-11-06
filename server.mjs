@@ -7,6 +7,7 @@ import {
   isAddress,
   keccak256,
   parseAbi,
+  recoverMessageAddress,
   toHex,
   zeroAddress,
   zeroHash,
@@ -24,6 +25,8 @@ const client = createPublicClient({
 const ETH_REGISTRAR = network.registrar
 const ETH_REGISTRY = network.registry
 const PAYMENT_TOKEN = network.paymentToken
+const AUTH_CHALLENGE_TTL_MS = 5 * 60 * 1000
+const authChallenges = new Map()
 
 // ENSv2 Enhanced Access Control role bits used by the parent-controlled policy.
 const ROLE_REGISTRAR = 1n << 0n
@@ -157,6 +160,26 @@ function normalizedSubname(value) {
 
 function labelId(label) {
   return BigInt(keccak256(toHex(label)))
+}
+
+async function currentEnsOwner(name) {
+  const normalized = normalize(String(name).trim())
+  const labels = normalized.split('.')
+  if (labels.length < 2 || labels.at(-1) !== 'eth') throw fail('Provide an ENSv2 .eth name, such as myname.eth.')
+
+  let parentLabel = labels.at(-2)
+  let registry = ETH_REGISTRY
+  let owner = await client.readContract({ address: registry, abi: registryReadAbi, functionName: 'findOwner', args: [parentLabel] })
+  if (owner === zeroAddress) return owner
+
+  for (const label of labels.slice(0, -2).reverse()) {
+    registry = await client.readContract({ address: registry, abi: registryReadAbi, functionName: 'getSubregistry', args: [parentLabel] })
+    if (registry === zeroAddress) return zeroAddress
+    owner = await client.readContract({ address: registry, abi: registryReadAbi, functionName: 'findOwner', args: [label] })
+    if (owner === zeroAddress) return owner
+    parentLabel = label
+  }
+  return owner
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +430,60 @@ async function prepareReveal(body) {
   })
 }
 
+function createAuthChallenge(nameInput, addressInput) {
+  let name
+  try { name = normalize(String(nameInput || '').trim()) } catch { throw fail('Provide a valid ENS name.') }
+  if (!name.endsWith('.eth')) throw fail('Provide an ENSv2 .eth name, such as myname.eth.')
+  const address = parseAddress(addressInput, 'address')
+  const now = Date.now()
+  for (const [id, challenge] of authChallenges) {
+    if (challenge.expiresAt <= now) authChallenges.delete(id)
+  }
+  const challengeId = `0x${randomBytes(16).toString('hex')}`
+  const nonce = `0x${randomBytes(32).toString('hex')}`
+  const expiresAt = now + AUTH_CHALLENGE_TTL_MS
+  const issuedAt = new Date(now).toISOString()
+  const expirationTime = new Date(expiresAt).toISOString()
+  const message = [
+    'Sign in to Hisaab ENSv2',
+    '',
+    `ENS name: ${name}`,
+    `Wallet: ${address}`,
+    `Chain ID: ${network.chain.id}`,
+    `Nonce: ${nonce}`,
+    `Issued at: ${issuedAt}`,
+    `Expiration time: ${expirationTime}`,
+  ].join('\n')
+  authChallenges.set(challengeId, { name, address, message, expiresAt })
+  return { challengeId, message, expiresAt: expirationTime }
+}
+
+async function verifyAuthChallenge(body) {
+  const challengeId = String(body.challengeId || '')
+  const signature = String(body.signature || '')
+  if (!/^0x[0-9a-fA-F]{32}$/.test(challengeId)) throw fail('challengeId must be a 16-byte hex value.')
+  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) throw fail('signature must be a 65-byte hex value.')
+  const challenge = authChallenges.get(challengeId)
+  if (!challenge) throw fail('Challenge not found or already used.', 409)
+  authChallenges.delete(challengeId)
+  if (challenge.expiresAt <= Date.now()) throw fail('Challenge expired. Request a new challenge.', 410)
+
+  let recoveredAddress
+  try { recoveredAddress = await recoverMessageAddress({ message: challenge.message, signature }) } catch { throw fail('Signature is invalid.') }
+  if (recoveredAddress.toLowerCase() !== challenge.address.toLowerCase()) throw fail('Signature does not match the challenged wallet.', 403)
+
+  const owner = await currentEnsOwner(challenge.name)
+  const verified = owner !== zeroAddress && owner.toLowerCase() === challenge.address.toLowerCase()
+  return {
+    verified,
+    name: challenge.name,
+    address: challenge.address,
+    owner,
+    network: network.key,
+    chainId: network.chain.id,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -459,6 +536,15 @@ const server = createServer(async (req, res) => {
     // Prepare reveal/register transaction
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/register/prepare-reveal') {
       return reply(res, 200, await prepareReveal(await readBody(req)))
+    }
+
+    // ENS wallet ownership sign-in challenge
+    if (req.method === 'POST' && url.pathname === '/api/v1/ens/auth/challenge') {
+      const body = await readBody(req)
+      return reply(res, 200, createAuthChallenge(body.name, body.address))
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/ens/auth/verify') {
+      return reply(res, 200, await verifyAuthChallenge(await readBody(req)))
     }
 
     // Parent-controlled subname hierarchy status
