@@ -71,7 +71,7 @@ export async function prepareRecords({ name, from, records }) {
     else {
       const resolver = await resolverFor(n)
       const data = encodeFunctionData({ abi: resolverAbi, functionName: 'setData', args: [toHex(packetToBytes(n)), r.key, stringToHex(r.value)] })
-      out.push(tx('set-name-data', n, from, resolver, data, { key: r.key, value: r.value }))
+      out.push(tx('set-name-data', n, from, resolver, data, { key: r.key, recordValue: r.value }))
     }
   }
   return { name: n, via: isSubname ? '/api/v1/ens/subchildren/set-data' : 'direct setData', transactions: out }
@@ -98,5 +98,5 @@ export async function prepareApproval({ name, from, invoiceId }) {
   const entry = `invoice:${invoiceId}`
   const value = existing.includes(entry) ? existing.join(',') : [...existing, entry].join(',')
   const data = encodeFunctionData({ abi: resolverAbi, functionName: 'setData', args: [toHex(packetToBytes(n)), 'hisaab.approved', stringToHex(value)] })
-  return tx('client-approve-invoice', n, from, info.resolver, data, { key: 'hisaab.approved', value })
+  return tx('client-approve-invoice', n, from, info.resolver, data, { key: 'hisaab.approved', recordValue: value })
 }
