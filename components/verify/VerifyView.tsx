@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { FileDown, RefreshCw, TriangleAlert } from "lucide-react";
+import { FileDown, Lock, RefreshCw, TriangleAlert } from "lucide-react";
+import { keyFromFragment, type SealedInvoice } from "@hisaab/core";
 import { toast } from "sonner";
 import { api, downloadPdf, type VerifyResult } from "@/lib/api";
+import { downloadSealedPdf } from "@/lib/sealed";
+import { KeyUnlock } from "@/components/KeyUnlock";
 import { useHisaab } from "@/lib/hisaab";
 import { dur, stagger, useHero } from "@/lib/motion";
 import { longDate } from "@/lib/format";
@@ -29,6 +32,21 @@ const TITLES: Record<string, string> = { hash: "Document", issuer: "Issuer", sta
 function verdictOf(r: Found): Verdict {
   const t = Object.fromEntries(r.checks.map((c) => [c.key, c.tone]));
   if (r.verified) return { headline: <em>Verified</em>, text: r.summary ?? "", stamp: { variant: "verified" }, tone: "ok" };
+  if (r.sealed && !r.unlocked && t.hash !== "red") {
+    const paid = t.payment === "green";
+    return {
+      headline: (
+        <>
+          {paid ? "Paid" : "Recorded"} · <em>sealed</em>
+        </>
+      ),
+      text: paid
+        ? "The payment checks out onchain. Who this invoice is between is sealed. Drop its PDF and enter the invoice key to check the parties."
+        : "Who this invoice is between is sealed. Drop its PDF and enter the invoice key to check the parties.",
+      stamp: paid ? { variant: "paid" } : null,
+      tone: paid ? "ok" : "warn",
+    };
+  }
   const anyRed = r.checks.some((c) => c.tone === "red");
   if (!anyRed && t.hash === "grey" && t.issuer === "green" && t.payment === "green") {
     return {
@@ -63,6 +81,8 @@ export function VerifyView({ id }: { id: string }) {
   const [fragment, setFragment] = useState<string | null>(null);
   const [first, setFirst] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [sealed, setSealed] = useState<SealedInvoice | null>(null);
+  const [key, setKey] = useState<string | null>(null);
   const docRef = useRef<unknown>(null);
 
   const load = useCallback(
@@ -80,6 +100,7 @@ export function VerifyView({ id }: { id: string }) {
           setSheetDoc(r.document as SheetDoc);
         }
         setFragment(frag);
+        if (frag) setKey((k) => k ?? keyFromFragment(frag));
         setResult(r);
         setError(null);
       } catch (e) {
@@ -94,13 +115,11 @@ export function VerifyView({ id }: { id: string }) {
   useEffect(() => {
     docRef.current = null;
     setSheetDoc(null);
+    setSealed(null);
+    setKey(null);
     try {
-      const dropped = sessionStorage.getItem(`hisaab:drop:${id}`);
-      if (dropped) {
-        docRef.current = JSON.parse(dropped);
-        setSheetDoc(docRef.current as SheetDoc);
-        sessionStorage.removeItem(`hisaab:drop:${id}`);
-      }
+      const dropped = sessionStorage.getItem(`hisaab:sealed:${id}`);
+      if (dropped) setSealed(JSON.parse(dropped));
     } catch {}
     setResult(null);
     setFirst(true);
@@ -138,6 +157,21 @@ export function VerifyView({ id }: { id: string }) {
   const delayOf = (i: number) => (first ? 0.25 + i * step : 0);
   const stampDelay = reduced ? 0 : first ? delayOf(3) + dur.base * hero : 0;
   const paidOn = found ? longDate(found.invoice.paidAt) : "";
+  const locked = !!found && found.sealed && !found.unlocked;
+
+  function unlock(doc: unknown, k: string) {
+    docRef.current = doc;
+    setSheetDoc(doc as SheetDoc);
+    setKey(k);
+    setSealed(null);
+    try {
+      sessionStorage.removeItem(`hisaab:sealed:${id}`);
+    } catch {}
+    setFirst(true);
+    setResult(null);
+    load();
+    toast("Unlocked in this browser");
+  }
 
   if (error && !result) {
     return (
@@ -233,7 +267,9 @@ export function VerifyView({ id }: { id: string }) {
             delay={delayOf(i)}
           />
         ))}
-        <p className="mt-3 text-sm text-ink-3">Verified means A, B and D pass. Standing and Client add context from ENS.</p>
+        <p className="mt-3 text-sm text-ink-3">
+          {locked ? "Sealed invoices show only A and D until they're unlocked. B, C and Client need the parties, which only the PDF and key reveal." : "Verified means A, B and D pass. Standing and Client add context from ENS."}
+        </p>
       </section>
 
       {found && (
@@ -242,15 +278,26 @@ export function VerifyView({ id }: { id: string }) {
             <ReceiptCard id={id} image={found.receipt.image} />
           ) : (
             <p className="rounded-md border border-rule bg-paper-2/60 p-4 text-[15px] text-ink-2">
-              No receipt NFT. One is recorded to the issuer only when the invoice is paid in full, and it is burned on a full refund.
+              No receipt NFT. One is minted only when the invoice is paid in full, and it is burned on a full refund.
             </p>
           )}
         </section>
       )}
 
+      {found && sealed && !sheetDoc && <KeyUnlock sealed={sealed} onOpen={unlock} />}
+
       {found &&
         (sheetDoc ? (
           <InvoiceSheet doc={sheetDoc} id={id} docHash={found.invoice.docHash} collapsible />
+        ) : locked ? (
+          !sealed && (
+            <p className="flex gap-3 rounded-md border border-rule bg-paper-2/60 p-4 text-[15px] text-ink-2">
+              <Lock className="mt-0.5 size-5 shrink-0" />
+              <span>
+                <b className="font-semibold">Sealed.</b> Names, wallets and line items aren&apos;t public. Drop the sealed invoice PDF below, then enter its invoice key.
+              </span>
+            </p>
+          )
         ) : (
           <p className="flex gap-3 rounded-md border border-warn/40 bg-warn-fill/15 p-4 text-[15px] text-warn">
             <TriangleAlert className="mt-0.5 size-5 shrink-0" />
@@ -272,9 +319,7 @@ export function VerifyView({ id }: { id: string }) {
                 <div key={p.txHash} className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 border-b border-rule py-3">
                   <Amount units={p.amount} />
                   <span className="label rounded-sm border border-rule px-1.5 py-0.5 text-right">{p.gasless ? "Gasless" : "Wallet"}</span>
-                  <span className="text-sm text-ink-3">
-                    from <Hash value={p.payer} />
-                  </span>
+                  <span className="text-sm text-ink-3">{p.payer ? <>from <Hash value={p.payer} /></> : "payer sealed"}</span>
                   <Hash value={p.txHash} href={txUrl(p.txHash)} className="justify-self-end text-sm" />
                 </div>
               ))}
@@ -301,9 +346,9 @@ export function VerifyView({ id }: { id: string }) {
             >
               <FileDown /> Download Hisaab Statement (PDF)
             </Button>
-            {sheetDoc && (
-              <Button variant="secondary" onClick={() => downloadPdf("/invoice-pdf", { id, document: docRef.current ?? undefined }, `invoice-${id}.pdf`).catch((e) => toast.error(e.message))}>
-                Invoice PDF
+            {sheetDoc && key && (
+              <Button variant="secondary" onClick={() => downloadSealedPdf(id, sheetDoc as never, key).catch((e) => toast.error(e.message))}>
+                Sealed invoice PDF
               </Button>
             )}
           </div>
@@ -314,13 +359,15 @@ export function VerifyView({ id }: { id: string }) {
                 docRef.current = r.document;
                 setSheetDoc(r.document as SheetDoc);
               }
+              if (r.exists && r.sealedDocument) setSealed(r.sealedDocument);
               setFirst(true);
               setResult(null);
               requestAnimationFrame(() => setResult(r));
-              toast(r.exists ? "PDF checked against the chain" : "That PDF points to an invoice that doesn't exist");
+              toast(!r.exists ? "That PDF points to an invoice that doesn't exist" : r.needsKey ? "Sealed PDF loaded. Enter its key." : "PDF checked against the chain");
             }}
           />
           {fragment && <p className="text-sm text-ink-3">The document came from the link (after #). It never left this browser except for this check.</p>}
+          {!fragment && sheetDoc && <p className="text-sm text-ink-3">Unlocked with the invoice key in this browser. The key wasn&apos;t sent anywhere; the decrypted invoice was only used for these checks.</p>}
         </section>
       )}
     </div>

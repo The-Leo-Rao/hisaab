@@ -52,8 +52,8 @@ export function PdfDropZone({ id, onResult }: { id?: string; onResult: (r: Verif
       )}
     >
       <SheetIcon lift={over} />
-      <span className="font-medium">{busy ? "Reading the PDF…" : "Drop a Hisaab Statement or Invoice PDF"}</span>
-      <span className="text-sm text-ink-3">or click to choose a file. The document inside is checked against the chain.</span>
+      <span className="font-medium">{busy ? "Reading the PDF…" : "Drop a sealed Hisaab invoice PDF"}</span>
+      <span className="text-sm text-ink-3">or click to choose a file. You'll need its invoice key to open it.</span>
       <input ref={input} type="file" accept="application/pdf" className="sr-only" onChange={(e) => use(e.target.files?.[0])} />
     </label>
   );

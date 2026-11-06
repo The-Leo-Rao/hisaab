@@ -12,7 +12,7 @@ export default function VerifyLookup() {
   const [id, setId] = useState("");
   return (
     <div className="mx-auto max-w-[640px]">
-      <PageTitle title={<>Verify an <em>invoice</em></>} sub="No wallet needed. Type the invoice number, scan its QR code, or drop its PDF." />
+      <PageTitle title={<>Verify an <em>invoice</em></>} sub="No wallet needed. Type the invoice number or scan its QR code for the public facts. Drop the sealed PDF and enter its key to see who it is between." />
       <form
         className="flex gap-3"
         onSubmit={(e) => {
@@ -29,9 +29,9 @@ export default function VerifyLookup() {
       <div className="mt-8">
         <PdfDropZone
           onResult={(r) => {
-            if (r.exists && r.document) {
+            if (r.exists && r.sealedDocument) {
               try {
-                sessionStorage.setItem(`hisaab:drop:${r.id}`, JSON.stringify(r.document));
+                sessionStorage.setItem(`hisaab:sealed:${r.id}`, JSON.stringify(r.sealedDocument));
               } catch {}
             }
             router.push(`/verify/${r.id}`);
