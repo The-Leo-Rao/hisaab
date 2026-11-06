@@ -6,5 +6,10 @@
     "api": "node --env-file-if-exists=.env server.mjs",
     "cli": "node --env-file-if-exists=.env cli.mjs"
   },
-  "dependencies": { "viem": "^2.35.0" }
+  "dependencies": {
+    "canonicalize": "^2.1.0",
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4",
+    "viem": "^2.35.0"
+  }
 }
