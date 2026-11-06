@@ -11,8 +11,8 @@ import {
   type Transport,
   type WalletClient,
 } from "viem";
-import { namehash, normalize } from "viem/ens";
 import { receiptAbi, registryAbi } from "./abi";
+import { ensNode, issuerCommitment } from "./commit";
 
 export const usdtAbi = parseAbi([
   "function name() view returns (string)",
@@ -58,6 +58,7 @@ export type CreateInput = {
   issuerName: string;
   clientName?: string;
   supersedes?: bigint;
+  salt?: Hex;
 };
 
 export type PaymentEvent = {
@@ -68,17 +69,6 @@ export type PaymentEvent = {
   txHash: Hex;
   blockNumber: bigint;
 };
-
-const ZERO32: Hex = "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-export function ensNode(name: string): Hex {
-  if (!name) return ZERO32;
-  try {
-    return namehash(normalize(name));
-  } catch {
-    return namehash(name);
-  }
-}
 
 export function remaining(inv: OnchainInvoice): bigint {
   return inv.amount - inv.paid;
@@ -205,9 +195,9 @@ export function createHisaab(client: PublicClient, addrs: HisaabAddresses) {
           amount: p.amount,
           dueDate: p.dueDate,
           docHash: p.docHash,
-          issuerNode: ensNode(p.issuerName),
-          issuerName: p.issuerName,
-          clientName: p.clientName ?? "",
+          issuerNode: p.salt ? issuerCommitment(p.issuerName, p.salt) : ensNode(p.issuerName),
+          issuerName: p.salt ? "" : p.issuerName,
+          clientName: p.salt ? "" : p.clientName ?? "",
           supersedes: p.supersedes ?? 0n,
         },
       ],
