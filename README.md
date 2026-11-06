@@ -225,6 +225,64 @@ curl -X POST http://localhost:3000/api/v1/ens/children/revoke \
 
 ---
 
+### Register a subchild and optionally write pure data
+
+This route uses ENSv2's exposed `UserRegistry.register()` function on the
+registry attached to `parent`. It accepts one label (not a dotted name), so it
+can safely create deeper names such as `invoice.team.iownthis.eth`.
+
+```bash
+curl -X POST http://localhost:3000/api/v1/ens/subchildren/register \
+  -H 'content-type: application/json' \
+  -d '{
+    "parent": "team.iownthis.eth",
+    "label": "invoice",
+    "from": "0xROOT_PARENT_WALLET",
+    "resolver": "0xPERMISSIONED_RESOLVER",
+    "data": {
+      "key": "com.hisaab.invoice",
+      "value": "INV-2026-0001",
+      "encoding": "utf8"
+    }
+  }'
+```
+
+The response always contains `registration`, an unsigned transaction for the
+parent registry. When `data` is supplied it also contains `dataWrite`, an
+unsigned `PermissionedResolver.setData(bytes,string,bytes)` transaction. Send
+`registration` first and wait for confirmation before sending `dataWrite`.
+They cannot be combined into one transaction because they target different
+contracts.
+
+`data.value` is UTF-8 by default. Set `encoding` to `hex` and pass an even-size
+`0x...` byte string to store arbitrary binary data. The connected wallet must
+have `ROLE_SET_DATA` on the resolver, either globally or for that data key; the
+API checks this before returning `dataWrite`.
+
+### Write data on an existing subchild
+
+Use the resolver already attached to the active name:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/ens/subchildren/set-data \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "invoice.team.iownthis.eth",
+    "from": "0xROOT_PARENT_WALLET",
+    "data": {
+      "key": "com.hisaab.invoice",
+      "value": "0xdeadbeef",
+      "encoding": "hex"
+    }
+  }'
+```
+
+This returns one unsigned resolver transaction. The parent hierarchy must be
+controlled by `from`, the name must be active with a resolver, and `from` must
+hold the resolver's required data-write role.
+
+---
+
 ## Frontend integration example
 
 ```js

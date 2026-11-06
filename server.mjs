@@ -8,11 +8,12 @@ import {
   keccak256,
   parseAbi,
   recoverMessageAddress,
+  stringToHex,
   toHex,
   zeroAddress,
   zeroHash,
 } from 'viem'
-import { normalize } from 'viem/ens'
+import { normalize, packetToBytes } from 'viem/ens'
 import { getNetwork, getRpcUrl } from './network.mjs'
 
 const network = getNetwork(process.env.VITE_NETWORK)
@@ -33,12 +34,26 @@ const ROLE_REGISTRAR = 1n << 0n
 const ROLE_UNREGISTER = 1n << 12n
 const ROLE_RENEW = 1n << 16n
 const ROLE_SET_RESOLVER = 1n << 24n
+// Permissioned Resolver role for setData(name, key, value).
+const ROLE_SET_DATA = 1n << 24n
 
 const registryReadAbi = [
   { type: 'function', name: 'getSubregistry', stateMutability: 'view', inputs: [{ name: 'label', type: 'string' }], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'getResolver', stateMutability: 'view', inputs: [{ name: 'label', type: 'string' }], outputs: [{ type: 'address' }] },
   { type: 'function', name: 'findOwner', stateMutability: 'view', inputs: [{ name: 'label', type: 'string' }], outputs: [{ type: 'address' }] },
   { type: 'function', name: 'hasRootRoles', stateMutability: 'view', inputs: [{ name: 'roleBitmap', type: 'uint256' }, { name: 'account', type: 'address' }], outputs: [{ type: 'bool' }] },
   { type: 'function', name: 'getStatus', stateMutability: 'view', inputs: [{ name: 'anyId', type: 'uint256' }], outputs: [{ type: 'uint8' }] },
+]
+
+const resolverReadAbi = [
+  { type: 'function', name: 'hasRootRoles', stateMutability: 'view', inputs: [{ name: 'roleBitmap', type: 'uint256' }, { name: 'account', type: 'address' }], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'hasRoles', stateMutability: 'view', inputs: [{ name: 'anyId', type: 'uint256' }, { name: 'roleBitmap', type: 'uint256' }, { name: 'account', type: 'address' }], outputs: [{ type: 'bool' }] },
+]
+
+const resolverWriteAbi = [
+  { type: 'function', name: 'setData', stateMutability: 'nonpayable', inputs: [
+    { name: 'name', type: 'bytes' }, { name: 'key', type: 'string' }, { name: 'value', type: 'bytes' },
+  ], outputs: [] },
 ]
 
 const registryWriteAbi = [
@@ -158,6 +173,38 @@ function normalizedSubname(value) {
   return { name, labels, childLabel: labels[0], parentName: labels.slice(1).join('.') }
 }
 
+function normalizedParentName(value) {
+  let name
+  try { name = normalize(String(value || '').trim()) } catch { throw fail('Invalid ENS parent name.') }
+  const labels = name.split('.')
+  if (labels.length < 2 || labels.at(-1) !== 'eth') throw fail('Provide an ENSv2 .eth parent name, such as team.iownthis.eth.')
+  return name
+}
+
+function childNameFromParent(parentInput, labelInput) {
+  const parent = normalizedParentName(parentInput)
+  let candidate
+  try { candidate = normalize(`${String(labelInput || '').trim()}.eth`) } catch { throw fail('Invalid subchild label.') }
+  const labels = candidate.split('.')
+  if (labels.length !== 2 || labels[1] !== 'eth') throw fail('label must be one ENS label, without dots.')
+  return { parent, label: labels[0], name: normalize(`${labels[0]}.${parent}`) }
+}
+
+function parseDataRecord(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) throw fail('data must be an object with key, value, and optional encoding.')
+  const key = typeof record.key === 'string' ? record.key.trim() : ''
+  if (!key) throw fail('data.key must be a non-empty string.')
+  if (key.length > 256) throw fail('data.key must be at most 256 characters.')
+  const encoding = record.encoding || 'utf8'
+  if (encoding !== 'utf8' && encoding !== 'hex') throw fail('data.encoding must be either "utf8" or "hex".')
+  if (typeof record.value !== 'string') throw fail('data.value must be a string.')
+  if (encoding === 'hex') {
+    if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(record.value)) throw fail('Hex data.value must have an 0x prefix and an even number of hex characters.')
+    return { key, value: record.value, encoding }
+  }
+  return { key, value: stringToHex(record.value), encoding }
+}
+
 function labelId(label) {
   return BigInt(keccak256(toHex(label)))
 }
@@ -275,6 +322,70 @@ async function prepareRevoke(body) {
   await requireRootRole(scope.childRegistry, from, ROLE_UNREGISTER)
   const data = encodeFunctionData({ abi: registryWriteAbi, functionName: 'unregister', args: [id] })
   return unsignedTransaction({ action: 'revoke-child', name: scope.name, parent: scope.parentName, from, to: scope.childRegistry, data })
+}
+
+async function prepareDataWrite({ name, parent, from, resolver, dataRecord }) {
+  const resource = labelId(dataRecord.key)
+  const [hasRootPermission, hasKeyPermission] = await Promise.all([
+    client.readContract({ address: resolver, abi: resolverReadAbi, functionName: 'hasRootRoles', args: [ROLE_SET_DATA, from] }),
+    client.readContract({ address: resolver, abi: resolverReadAbi, functionName: 'hasRoles', args: [resource, ROLE_SET_DATA, from] }),
+  ])
+  if (!hasRootPermission && !hasKeyPermission) {
+    throw fail(`The connected wallet lacks Permissioned Resolver permission to set data key "${dataRecord.key}".`, 403)
+  }
+  const data = encodeFunctionData({
+    abi: resolverWriteAbi,
+    functionName: 'setData',
+    args: [toHex(packetToBytes(name)), dataRecord.key, dataRecord.value],
+  })
+  return unsignedTransaction({
+    action: 'set-subchild-data',
+    name,
+    parent,
+    from,
+    to: resolver,
+    data,
+    metadata: {
+      key: dataRecord.key,
+      value: dataRecord.value,
+      encoding: dataRecord.encoding,
+      permission: hasRootPermission ? 'resolver-root-role' : 'data-key-role',
+    },
+  })
+}
+
+// register() and setData() target different contracts, so a data record is
+// returned as a second wallet transaction rather than pretending it is atomic.
+async function prepareSubchildRegistration(body) {
+  const { parent, name } = childNameFromParent(body.parent, body.label)
+  const registration = await prepareCreate({ ...body, name })
+  if (body.data === undefined) return { registration }
+
+  if (!body.resolver || !isAddress(body.resolver)) {
+    throw fail('resolver must be a valid Permissioned Resolver address when data is supplied.')
+  }
+  const dataWrite = await prepareDataWrite({
+    name,
+    parent,
+    from: registration.from,
+    resolver: body.resolver,
+    dataRecord: parseDataRecord(body.data),
+  })
+  return {
+    registration,
+    dataWrite,
+    sequence: ['Send registration first.', 'After it confirms, send dataWrite to store the resolver record.'],
+  }
+}
+
+async function prepareExistingSubchildData(body) {
+  const from = parseAddress(body.from, 'from')
+  const scope = await resolveControlledChild(body.name, from)
+  const status = await client.readContract({ address: scope.childRegistry, abi: registryReadAbi, functionName: 'getStatus', args: [labelId(scope.childLabel)] })
+  if (status !== 2) throw fail(`${scope.name} is not an active child name.`, 409)
+  const resolver = await client.readContract({ address: scope.childRegistry, abi: registryReadAbi, functionName: 'getResolver', args: [scope.childLabel] })
+  if (resolver === zeroAddress) throw fail(`${scope.name} has no resolver. Set one before writing data.`, 409)
+  return prepareDataWrite({ name: scope.name, parent: scope.parentName, from, resolver, dataRecord: parseDataRecord(body.data) })
 }
 
 // ---------------------------------------------------------------------------
@@ -559,6 +670,10 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/children/create') return reply(res, 200, await prepareCreate(await readBody(req)))
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/children/modify') return reply(res, 200, await prepareModify(await readBody(req)))
     if (req.method === 'POST' && url.pathname === '/api/v1/ens/children/revoke') return reply(res, 200, await prepareRevoke(await readBody(req)))
+
+    // Subchild registration and Permissioned Resolver data records.
+    if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/register') return reply(res, 200, await prepareSubchildRegistration(await readBody(req)))
+    if (req.method === 'POST' && url.pathname === '/api/v1/ens/subchildren/set-data') return reply(res, 200, await prepareExistingSubchildData(await readBody(req)))
 
     return reply(res, 404, { error: 'Unknown route. See README.md for the /api/v1/ens/ endpoint list.' })
   } catch (error) {
