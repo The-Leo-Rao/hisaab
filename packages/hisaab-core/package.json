@@ -12,7 +12,8 @@
   "scripts": {
     "abi": "node scripts/gen-abi.mjs",
     "typecheck": "tsc --noEmit",
-    "e2e": "tsx test/e2e.ts"
+    "e2e": "tsx test/e2e.ts",
+    "deploy:local": "tsx scripts/deploy-local.ts"
   },
   "dependencies": {
     "canonicalize": "^2.1.0",

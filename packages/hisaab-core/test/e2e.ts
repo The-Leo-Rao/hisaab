@@ -18,7 +18,7 @@ import {
 import { createRelayer } from "../src/relay";
 
 const MNEMONIC = "test test test test test test test test test test test junk";
-const file = process.env.DEPLOY_FILE ?? new URL("../../../examples/dev-console/.deploy.local.json", import.meta.url);
+const file = process.env.DEPLOY_FILE ?? new URL("../../../.deploy.local.json", import.meta.url);
 const net = JSON.parse(readFileSync(file, "utf8"));
 const chain = chainFor(net.chainId, net.rpcUrl);
 const pub = createPublicClient({ chain, transport: http(net.rpcUrl) });

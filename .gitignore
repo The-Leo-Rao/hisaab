@@ -12,4 +12,4 @@ contracts/broadcast/*/31337/
 node_modules/
 dist/
 *.tsbuildinfo
-examples/dev-console/.deploy.local.json
+.deploy.local.json
