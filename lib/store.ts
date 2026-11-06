@@ -30,3 +30,9 @@ export function markSeen(ids: string[]) {
   ids.forEach((i) => s.add(i));
   set("hisaab:seen-receipts", [...s]);
 }
+
+export const saveKey = (hash: string, key: string) => set(`hisaab:key:${hash.toLowerCase()}`, key);
+export const loadKey = (hash: string) => get<string>(`hisaab:key:${hash.toLowerCase()}`);
+
+export const saveNameSalt = (owner: string, name: string, salt: string) => set(`hisaab:namesalt:${owner.toLowerCase()}:${name.toLowerCase()}`, salt);
+export const loadNameSalt = (owner: string, name: string) => get<`0x${string}`>(`hisaab:namesalt:${owner.toLowerCase()}:${name.toLowerCase()}`);
