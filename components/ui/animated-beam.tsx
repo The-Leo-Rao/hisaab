@@ -25,6 +25,7 @@ export interface AnimatedBeamProps {
   startYOffset?: number
   endXOffset?: number
   endYOffset?: number
+  still?: boolean
 }
 
 export const AnimatedBeam: React.FC<AnimatedBeamProps> = ({
@@ -47,6 +48,7 @@ export const AnimatedBeam: React.FC<AnimatedBeamProps> = ({
   startYOffset = 0,
   endXOffset = 0,
   endYOffset = 0,
+  still = false,
 }) => {
   const id = useId()
   const [pathD, setPathD] = useState("")
@@ -134,16 +136,17 @@ export const AnimatedBeam: React.FC<AnimatedBeamProps> = ({
         d={pathD}
         stroke={pathColor}
         strokeWidth={pathWidth}
-        strokeOpacity={pathOpacity}
+        strokeOpacity={still ? 0.6 : pathOpacity}
+        strokeDasharray={still ? "4 6" : undefined}
         strokeLinecap="round"
       />
-      <path
+      {!still && <path
         d={pathD}
         strokeWidth={pathWidth}
         stroke={`url(#${id})`}
         strokeOpacity="1"
         strokeLinecap="round"
-      />
+      />}
       <defs>
         <motion.linearGradient
           className="transform-gpu"
