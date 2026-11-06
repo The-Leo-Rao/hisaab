@@ -15,6 +15,7 @@ import {
 } from 'viem'
 import { normalize, packetToBytes } from 'viem/ens'
 import { getNetwork, getRpcUrl } from './network.mjs'
+import { handleHisaab, isHisaabRoute } from './hisaab/routes.mjs'
 
 const network = getNetwork(process.env.VITE_NETWORK)
 const port = Number(process.env.PORT || 3000)
@@ -604,6 +605,8 @@ const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return reply(res, 204, {})
 
   try {
+    if (isHisaabRoute(url.pathname) && (await handleHisaab(req, res, url)) !== false) return
+
     // Status / connection check
     if (req.method === 'GET' && url.pathname === '/api/v1/ens/status') {
       return reply(res, 200, {

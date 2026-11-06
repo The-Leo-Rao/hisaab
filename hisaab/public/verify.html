@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Verify invoice · Hisaab</title>
+<style>
+  :root { --bg:#f5f7fb; --card:#fff; --ink:#0f172a; --muted:#64748b; --line:#e5e9f0; --green:#059669; --amber:#d97706; --red:#dc2626; --grey:#94a3b8; --navy:#0b1220; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { background:var(--navy); color:#fff; padding:18px 20px; }
+  header .in, main { max-width:980px; margin:0 auto; }
+  header .in { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .brand { font-weight:800; letter-spacing:.32em; }
+  .brand small { display:block; font-weight:500; letter-spacing:.08em; color:#94a3b8; font-size:12px; margin-top:2px; }
+  header form { display:flex; gap:8px; }
+  header input { width:110px; padding:8px 10px; border-radius:10px; border:1px solid #334155; background:#111a2e; color:#fff; font:inherit; }
+  button, .btn { border:0; border-radius:10px; padding:10px 14px; font:600 14px/1 inherit; font-family:inherit; cursor:pointer; background:var(--ink); color:#fff; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
+  button.light { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  header button { background:#34d399; color:#062014; }
+  main { padding:20px 16px 60px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px 20px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .verdict { display:flex; gap:16px; align-items:center; border-left:6px solid var(--grey); }
+  .verdict .icon { width:52px; height:52px; border-radius:50%; display:grid; place-items:center; font-size:26px; color:#fff; flex:none; background:var(--grey); }
+  .verdict h1 { margin:0; font-size:20px; }
+  .verdict p { margin:4px 0 0; color:var(--muted); }
+  .v-green { border-left-color:var(--green); } .v-green .icon { background:var(--green); }
+  .v-amber { border-left-color:var(--amber); } .v-amber .icon { background:var(--amber); }
+  .v-red { border-left-color:var(--red); } .v-red .icon { background:var(--red); }
+  .grid2 { display:grid; grid-template-columns: 1.2fr 1fr; gap:16px; }
+  @media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } }
+  h2 { font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 12px; }
+  .check { display:grid; grid-template-columns: 14px 1fr auto; gap:10px; padding:12px 0; border-top:1px solid var(--line); align-items:start; }
+  .check:first-of-type { border-top:0; }
+  .dot { width:10px; height:10px; border-radius:50%; margin-top:6px; background:var(--grey); }
+  .check b { display:block; }
+  .check span { color:var(--muted); font-size:14px; }
+  .tag { font-size:11px; font-weight:700; letter-spacing:.08em; padding:3px 8px; border-radius:999px; border:1px solid currentColor; }
+  .t-green { color:var(--green); } .t-amber { color:var(--amber); } .t-red { color:var(--red); } .t-grey { color:var(--grey); }
+  .d-green { background:var(--green); } .d-amber { background:var(--amber); } .d-red { background:var(--red); } .d-grey { background:var(--grey); }
+  .receipt img { width:100%; border-radius:14px; display:block; }
+  .kv { display:grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap:12px 18px; }
+  .kv div small { display:block; color:var(--muted); font-size:12px; }
+  .kv div strong { word-break:break-all; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-top:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; border-top:0; }
+  code, .mono { font-family: ui-monospace, Consolas, monospace; font-size:12.5px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .drop { border:2px dashed var(--line); border-radius:14px; padding:20px; text-align:center; color:var(--muted); cursor:pointer; }
+  .drop.over { border-color:var(--green); color:var(--green); }
+  .muted { color:var(--muted); font-size:14px; }
+  .err { color:var(--red); }
+  .hidden { display:none !important; }
+  a { color:#2563eb; }
+</style>
+</head>
+<body>
+<header>
+  <div class="in">
+    <div class="brand">HISAAB<small>Invoice verification</small></div>
+    <form id="lookup"><input id="idInput" inputmode="numeric" placeholder="Invoice #" aria-label="Invoice number" /><button>Verify</button></form>
+  </div>
+</header>
+<main>
+  <section id="empty" class="card">
+    <h2>Verify a Hisaab invoice</h2>
+    <p class="muted">Scan the QR code on the invoice, statement or receipt NFT, type the invoice number above, or drop the invoice PDF below. No wallet needed.</p>
+  </section>
+  <p id="error" class="err hidden"></p>
+  <section id="verdict" class="card verdict hidden"><div class="icon" id="vIcon"></div><div><h1 id="vTitle"></h1><p id="vText"></p></div></section>
+  <div id="result" class="grid2 hidden">
+    <section class="card"><h2>Checks</h2><div id="checks"></div></section>
+    <section class="card receipt"><h2>Receipt NFT</h2><div id="receipt"></div></section>
+  </div>
+  <section id="details" class="card hidden"><h2>Invoice</h2><div class="kv" id="kv"></div></section>
+  <section id="lines" class="card hidden"><h2>Line items</h2><table><thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Amount</th></tr></thead><tbody id="lineRows"></tbody></table></section>
+  <section id="pays" class="card hidden"><h2>Payments on Whitechain</h2><table><thead><tr><th>Amount</th><th>From</th><th>Path</th><th>Transaction</th></tr></thead><tbody id="payRows"></tbody></table></section>
+  <section class="card">
+    <h2>Documents</h2>
+    <div class="actions" style="margin-bottom:14px">
+      <button id="stmt" class="hidden">Download Hisaab Statement (PDF)</button>
+      <button id="invpdf" class="light hidden">Download invoice PDF</button>
+    </div>
+    <label class="drop" id="drop"><input id="file" type="file" accept="application/pdf" class="hidden" />Drop the invoice or statement PDF here (or click) to check the document itself.</label>
+    <p class="muted" id="docNote"></p>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id)
+const state = { id: null, document: null, result: null }
+const short = (a) => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '-')
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+const money = (u) => { const s = BigInt(u).toString().padStart(7, '0'); const w = s.slice(0, -6); const f = s.slice(-6).replace(/0+$/, '').padEnd(2, '0'); return `${BigInt(w)}.${f}` }
+
+async function decodeFragment(hash) {
+  const d = new URLSearchParams(hash.replace(/^#/, '')).get('d')
+  if (!d) return null
+  const bin = atob(d.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((d.length + 3) % 4))
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+  const out = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+  return JSON.parse(await new Response(out).text())
+}
+
+async function api(path, body) {
+  const res = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {})
+  const j = await res.json().catch(() => ({}))
+  if (!res.ok && j.exists !== false) throw new Error(j.error || `Request failed (${res.status})`)
+  return j
+}
+
+function show(el, on = true) { $(el).classList.toggle('hidden', !on) }
+
+function render(r) {
+  state.result = r
+  show('empty', false)
+  if (!r.exists) { $('error').textContent = `Invoice #${r.id} does not exist on this registry.`; show('error'); ['verdict', 'result', 'details', 'lines', 'pays'].forEach((e) => show(e, false)); return }
+  show('error', false)
+  const tones = Object.fromEntries(r.checks.map((c) => [c.key, c.tone]))
+  const tone = r.verified ? 'green' : r.checks.some((c) => c.tone === 'red' && c.key !== 'hash') ? 'red' : 'amber'
+  $('verdict').className = `card verdict v-${tone}`
+  $('vIcon').textContent = tone === 'green' ? '✓' : tone === 'red' ? '✕' : '!'
+  $('vTitle').textContent = r.verified ? 'Verified' : tones.hash === 'grey' && tones.issuer === 'green' && tones.payment === 'green' ? 'Paid onchain. Add the document to check it' : 'Not fully verified'
+  $('vText').textContent = r.summary || 'Read each check below. A green result needs the document (A), the issuer (B) and the payment (D) to all be green.'
+  show('verdict')
+
+  $('checks').innerHTML = r.checks.map((c) => `<div class="check"><i class="dot d-${c.tone}"></i><div><b>${esc(c.label)}</b><span>${esc(c.text)}</span></div><em class="tag t-${c.tone}">${c.tone.toUpperCase()}</em></div>`).join('')
+  $('receipt').innerHTML = r.receipt.exists
+    ? `<img alt="Hisaab receipt #${r.id}" src="${r.receipt.image}"/><p class="muted">Soulbound token #${r.id} · held by <span class="mono">${short(r.receipt.owner)}</span></p>`
+    : `<p class="muted">No receipt NFT. One is minted to the issuer only when the invoice is paid in full (and burned on a full refund).</p>`
+  show('result')
+
+  const inv = r.invoice, doc = state.document
+  const kv = [
+    ['Invoice', doc?.invoiceNumber ? `${doc.invoiceNumber} (#${r.id})` : `#${r.id}`],
+    ['Status', inv.status],
+    ['Amount', `${inv.amountText} USDT`],
+    ['Paid', inv.refunded !== '0' ? `${inv.paidText} USDT (refunded ${inv.refundedText})` : `${inv.paidText} USDT`],
+    ['Issuer (ENS)', inv.issuerName || '-'],
+    ['Client (ENS)', inv.clientName || '-'],
+    ['Supplier', doc?.supplier?.legalName ?? '—'],
+    ['Customer', doc?.customer?.legalName ?? '—'],
+    ['Created', inv.createdAtIso],
+    ['Due', inv.dueDateIso],
+    ['Issuer wallet', short(inv.issuer)],
+    ['Payer wallet', inv.payer.startsWith('0x00000000') ? '-' : short(inv.payer)],
+  ]
+  if (r.kind === 'contractor') kv.push(['Employer', r.ens.issuer.records['hisaab.employer']], ['Role', r.ens.issuer.records['hisaab.role'] || '-'])
+  $('kv').innerHTML = kv.map(([k, v]) => `<div><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')
+  show('details')
+
+  $('lineRows').innerHTML = (doc?.lines || []).map((l) => `<tr><td>${esc(l.description)}</td><td>${esc(l.qty)}</td><td>${esc(l.unitPrice)}</td><td>${esc(l.amount)}</td></tr>`).join('')
+  show('lines', !!doc?.lines?.length)
+  $('payRows').innerHTML = r.payments.map((p) => `<tr><td>${money(p.amount)} USDT</td><td class="mono">${short(p.payer)}</td><td>${p.gasless ? 'gasless' : 'wallet'}</td><td><a class="mono" target="_blank" rel="noreferrer" href="${esc(p.explorer)}">${short(p.txHash)}</a></td></tr>`).join('')
+  show('pays', r.payments.length > 0)
+
+  show('stmt')
+  show('invpdf', !!doc)
+  $('docNote').textContent = doc ? 'Document loaded: check A compares it with the onchain fingerprint.' : 'No document loaded yet: only onchain facts are checked.'
+}
+
+async function run(id) {
+  state.id = id
+  $('idInput').value = id
+  try {
+    render(state.document ? await api('/api/v1/hisaab/verify', { id, document: state.document }) : await api(`/api/v1/hisaab/verify/${id}`))
+  } catch (e) { $('error').textContent = e.message; show('error') }
+}
+
+async function download(path, body, name) {
+  const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  if (!res.ok) { const j = await res.json().catch(() => ({})); $('error').textContent = j.error || 'Download failed'; show('error'); return }
+  const url = URL.createObjectURL(await res.blob())
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
+}
+
+$('stmt').onclick = () => download('/api/v1/hisaab/statement', { id: state.id, document: state.document }, `hisaab-statement-${state.id}.pdf`)
+$('invpdf').onclick = () => download('/api/v1/hisaab/invoice-pdf', { id: state.id, document: state.document }, `invoice-${state.id}.pdf`)
+$('lookup').onsubmit = (e) => { e.preventDefault(); const id = $('idInput').value.trim(); if (/^\d+$/.test(id)) { history.replaceState(null, '', `/verify/${id}${location.hash}`); run(id) } }
+
+async function usePdf(file) {
+  const buf = new Uint8Array(await file.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+  try {
+    const r = await api('/api/v1/hisaab/verify', { id: state.id ?? undefined, pdf: btoa(bin) })
+    state.document = r.document
+    history.replaceState(null, '', `/verify/${r.id}`)
+    state.id = r.id
+    $('idInput').value = r.id
+    render(r)
+  } catch (e) { $('error').textContent = e.message; show('error') }
+}
+$('file').onchange = (e) => e.target.files[0] && usePdf(e.target.files[0])
+const drop = $('drop')
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over') }
+drop.ondragleave = () => drop.classList.remove('over')
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); e.dataTransfer.files[0] && usePdf(e.dataTransfer.files[0]) }
+
+;(async () => {
+  try { state.document = await decodeFragment(location.hash) } catch {}
+  const m = location.pathname.match(/\/verify\/(\d+)/)
+  if (m) run(m[1])
+})()
+</script>
+</body>
+</html>
