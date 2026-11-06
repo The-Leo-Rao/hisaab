@@ -155,7 +155,7 @@ export async function statementPdf(result, document) {
     : 'One or more checks below are not green. Read each row before relying on this invoice.')
   const lines = []
   let cur = ''
-  for (const w of note.split(/s+/)) {
+  for (const w of note.split(/\s+/)) {
     const next = cur ? cur + ' ' + w : w
     if (fonts.regular.widthOfTextAtSize(next, 8.5) > W - 2 * M - 24 && cur) {
       lines.push(cur)
