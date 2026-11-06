@@ -9,12 +9,13 @@ import {ReceiptSVG} from "./ReceiptSVG.sol";
 
 // Deployed before the registry with its predicted address (see script/Deploy.s.sol).
 contract HisaabReceipt is ERC721, IERC5192 {
+    address public constant SINK = 0x000000000000000000000000000000000000dEaD;
+
     address public immutable registry;
     string public verifyBase;
 
     error OnlyRegistry();
     error Soulbound();
-    error NotHolder();
 
     constructor(address registry_, string memory verifyBase_) ERC721("Hisaab Receipt", "HSBR") {
         registry = registry_;
@@ -26,19 +27,13 @@ contract HisaabReceipt is ERC721, IERC5192 {
         _;
     }
 
-    function mint(address to, uint256 id) external onlyRegistry {
-        // _mint, not _safeMint: no callback into the issuer.
-        _mint(to, id);
+    function mint(uint256 id) external onlyRegistry {
+        _mint(SINK, id);
         emit Locked(id);
     }
 
     function burnByRegistry(uint256 id) external onlyRegistry {
         if (_ownerOf(id) != address(0)) _burn(id);
-    }
-
-    function burn(uint256 id) external {
-        if (_ownerOf(id) != msg.sender) revert NotHolder();
-        _burn(id);
     }
 
     function locked(uint256) external pure returns (bool) {

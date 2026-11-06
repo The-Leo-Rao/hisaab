@@ -154,7 +154,7 @@ contract HisaabRegistry is IHisaabRegistry, ReentrancyGuard {
         if (totalPaid == inv.amount) {
             inv.status = Status.Paid;
             inv.paidAt = uint64(block.timestamp);
-            receipt.mint(issuer, id);
+            receipt.mint(id);
             emit Settled(id, id);
         } else {
             inv.status = Status.PartiallyPaid;
