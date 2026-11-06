@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f6f1e6;
+  --color-paper-2: #eee7d7;
+  --color-card: #fffdf8;
+  --color-ink: #14213d;
+  --color-ink-2: #3b4766;
+  --color-ink-3: #6b7389;
+  --color-rule: rgb(20 33 61 / 0.22);
+  --color-rule-strong: rgb(20 33 61 / 0.45);
+
+  --color-ok: #0b6b60;
+  --color-ok-fill: #34d399;
+  --color-warn: #8a5a00;
+  --color-warn-fill: #fbbf24;
+  --color-bad: #b3261e;
+  --color-bad-fill: #f87171;
+  --color-idle: #5b6170;
+  --color-idle-fill: #a3a9b6;
+
+  --color-stamp-paid: #0e7a6d;
+  --color-stamp-verified: #1d2f5e;
+  --color-stamp-void: #b3261e;
+
+  --color-nft: #0b1220;
+
+  --font-display: var(--font-instrument), ui-serif, Georgia, serif;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-sheet: 0 1px 0 rgb(20 33 61 / 0.08), 0 8px 24px -12px rgb(20 33 61 / 0.18);
+}
+
+@utility display-xl {
+  font-family: var(--font-display);
+  font-size: 44px;
+  line-height: 48px;
+  letter-spacing: -0.01em;
+  @media (width >= 48rem) {
+    font-size: 72px;
+    line-height: 76px;
+  }
+}
+
+@utility display {
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 38px;
+  letter-spacing: -0.005em;
+  @media (width >= 48rem) {
+    font-size: 48px;
+    line-height: 52px;
+  }
+}
+
+@utility title {
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 28px;
+}
+
+@utility label {
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+@utility amount-hero {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 40px;
+  line-height: 44px;
+  font-variant-numeric: tabular-nums;
+  @media (width >= 48rem) {
+    font-size: 56px;
+    line-height: 60px;
+  }
+}
+
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 24px;
+    min-height: 100dvh;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: rgb(20 33 61 / 0.14);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+body.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+@keyframes paper-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-paper-2) 0%, rgb(238 231 215 / 0.55) 50%, var(--color-paper-2) 100%);
+  background-size: 200% 100%;
+  animation: paper-shimmer 1.6s linear infinite;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
