@@ -96,7 +96,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <IdentitySwitch />
           </div>
         </div>
-        <nav className="flex gap-1 overflow-x-auto border-t border-rule px-2 md:hidden">
+        <nav className="flex gap-1 overflow-x-auto border-t border-rule px-2 [scrollbar-width:none] md:hidden">
           {NAV.map(([href, label]) => (
             <Link key={href} href={href} className={cn("shrink-0 px-3 py-2.5 text-sm text-ink-2", path.startsWith(href) && "font-medium text-ink")}>
               {label}
