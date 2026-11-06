@@ -8,3 +8,8 @@ contracts/broadcast/*/31337/
 
 .vs/
 .vscode/
+
+node_modules/
+dist/
+*.tsbuildinfo
+examples/dev-console/.deploy.local.json
