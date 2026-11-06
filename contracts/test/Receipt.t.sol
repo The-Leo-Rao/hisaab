@@ -48,25 +48,33 @@ contract ReceiptTest is BaseTest {
     }
 
     function test_RevertTransfer_Soulbound() public {
-        vm.startPrank(ravi);
+        address sink = receipt.SINK();
+        vm.startPrank(sink);
         vm.expectRevert(HisaabReceipt.Soulbound.selector);
-        receipt.transferFrom(ravi, stranger, id);
+        receipt.transferFrom(sink, stranger, id);
         vm.expectRevert(HisaabReceipt.Soulbound.selector);
-        receipt.safeTransferFrom(ravi, stranger, id);
+        receipt.safeTransferFrom(sink, stranger, id);
         vm.expectRevert(HisaabReceipt.Soulbound.selector);
-        receipt.safeTransferFrom(ravi, stranger, id, "");
+        receipt.safeTransferFrom(sink, stranger, id, "");
         vm.expectRevert(HisaabReceipt.Soulbound.selector);
         receipt.approve(stranger, id);
         vm.expectRevert(HisaabReceipt.Soulbound.selector);
         receipt.setApprovalForAll(stranger, true);
         vm.stopPrank();
-        assertEq(receipt.ownerOf(id), ravi);
+        assertEq(receipt.ownerOf(id), sink);
+    }
+
+    function test_ReceiptGoesToSinkNotIssuer() public view {
+        assertEq(receipt.SINK(), 0x000000000000000000000000000000000000dEaD);
+        assertEq(receipt.ownerOf(id), receipt.SINK());
+        assertEq(receipt.balanceOf(ravi), 0);
+        assertEq(receipt.balanceOf(acme), 0);
     }
 
     function test_RevertMint_NotRegistry() public {
         vm.prank(ravi);
         vm.expectRevert(HisaabReceipt.OnlyRegistry.selector);
-        receipt.mint(ravi, 99);
+        receipt.mint(99);
         vm.prank(ravi);
         vm.expectRevert(HisaabReceipt.OnlyRegistry.selector);
         receipt.burnByRegistry(id);
@@ -101,15 +109,24 @@ contract ReceiptTest is BaseTest {
         assertTrue(vm.indexOf(json, "acme-q4.ravi-dev.eth") != type(uint256).max);
     }
 
-    function test_HolderCanBurn() public {
-        vm.prank(stranger);
-        vm.expectRevert(HisaabReceipt.NotHolder.selector);
-        receipt.burn(id);
-
+    function test_SealedInvoice_CardHidesNames() public {
+        CreateParams memory p = _params(acme);
+        p.docHash = keccak256("sealed");
+        p.issuerName = "";
+        p.clientName = "";
+        p.issuerNode = keccak256("commitment");
         vm.prank(ravi);
-        receipt.burn(id);
-        assertEq(receipt.balanceOf(ravi), 0);
-        assertEq(registry.getInvoice(id).paid, AMOUNT);
+        uint256 sealedId = registry.createInvoice(p);
+        vm.prank(acme);
+        registry.pay(sealedId, AMOUNT);
+
+        string memory json = svg.json(sealedId, registry.getInvoice(sealedId), VERIFY_BASE);
+        string memory img = svg.image(sealedId, registry.getInvoice(sealedId), VERIFY_BASE);
+        assertEq(vm.parseJsonKeys(json, "$").length, 5);
+        assertTrue(_has(img, "Sealed"));
+        assertFalse(_has(img, ISSUER_NAME));
+        assertFalse(_has(img, CLIENT_NAME));
+        assertTrue(_has(img, "SCAN TO VERIFY"));
     }
 
     function test_TokenURI_StatusShowsPartialRefund() public {

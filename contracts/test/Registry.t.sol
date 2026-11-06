@@ -85,7 +85,7 @@ contract RegistryTest is BaseTest {
         assertEq(uint8(inv.status), uint8(Status.Paid));
         assertEq(inv.payer, acme);
         assertEq(inv.paidAt, block.timestamp);
-        assertEq(receipt.ownerOf(id), ravi);
+        assertEq(receipt.ownerOf(id), receipt.SINK());
         assertEq(usdt.balanceOf(ravi), before + AMOUNT);
         assertEq(usdt.balanceOf(address(registry)), 0, "registry holds nothing");
     }
@@ -95,14 +95,14 @@ contract RegistryTest is BaseTest {
         vm.prank(acme);
         registry.pay(id, 200e6);
         assertEq(_status(id), uint8(Status.PartiallyPaid));
-        assertEq(receipt.balanceOf(ravi), 0);
+        assertEq(receipt.balanceOf(receipt.SINK()), 0);
         assertEq(_inv(id).paidAt, 0);
 
         vm.prank(acme);
         registry.pay(id, 300e6);
         assertEq(_status(id), uint8(Status.Paid));
-        assertEq(receipt.balanceOf(ravi), 1, "exactly one receipt");
-        assertEq(receipt.ownerOf(id), ravi);
+        assertEq(receipt.balanceOf(receipt.SINK()), 1, "exactly one receipt");
+        assertEq(receipt.ownerOf(id), receipt.SINK());
     }
 
     function test_RevertPay_Overpay_WrongClient_WrongPayer_Cancelled() public {
@@ -153,7 +153,7 @@ contract RegistryTest is BaseTest {
         registry.payWithAuthorization(id, acme, AMOUNT, 0, validBefore, salt, sig);
 
         assertEq(_status(id), uint8(Status.Paid));
-        assertEq(receipt.ownerOf(id), ravi);
+        assertEq(receipt.ownerOf(id), receipt.SINK());
         assertEq(usdt.balanceOf(address(registry)), 0, "funds only pass through");
     }
 
@@ -214,7 +214,7 @@ contract RegistryTest is BaseTest {
         assertEq(usdt.balanceOf(acme), before + 100e6, "refund goes to payer");
         assertEq(_inv(id).refunded, 100e6);
         assertEq(_status(id), uint8(Status.Paid));
-        assertEq(receipt.ownerOf(id), ravi);
+        assertEq(receipt.ownerOf(id), receipt.SINK());
     }
 
     function test_RefundFull_BurnsReceipt() public {
@@ -228,20 +228,9 @@ contract RegistryTest is BaseTest {
         vm.stopPrank();
 
         assertEq(_status(id), uint8(Status.Refunded));
-        assertEq(receipt.balanceOf(ravi), 0);
+        assertEq(receipt.balanceOf(receipt.SINK()), 0);
         vm.expectRevert();
         receipt.ownerOf(id);
-    }
-
-    function test_RefundFull_AfterHolderBurned() public {
-        uint256 id = _create(acme);
-        vm.prank(acme);
-        registry.pay(id, AMOUNT);
-        vm.prank(ravi);
-        receipt.burn(id);
-        vm.prank(ravi);
-        registry.refund(id, AMOUNT);
-        assertEq(_status(id), uint8(Status.Refunded));
     }
 
     function test_RevertRefund_OverRefund_NotIssuer() public {
@@ -292,7 +281,7 @@ contract RegistryTest is BaseTest {
         vm.prank(ravi);
         registry.refund(id, 100e6);
         assertEq(_status(id), uint8(Status.Refunded));
-        assertEq(receipt.balanceOf(ravi), 0);
+        assertEq(receipt.balanceOf(receipt.SINK()), 0);
 
         CreateParams memory p = _params(acme);
         p.docHash = keccak256("reissued");
@@ -302,7 +291,7 @@ contract RegistryTest is BaseTest {
         uint256 newId = registry.createInvoice(p);
         vm.prank(acme);
         registry.pay(newId, AMOUNT);
-        assertEq(receipt.ownerOf(newId), ravi);
+        assertEq(receipt.ownerOf(newId), receipt.SINK());
     }
 
     function test_CancelByEitherParty_OnlyWhenUnpaid() public {
@@ -387,7 +376,7 @@ contract RegistryTest is BaseTest {
         uint256 newId = registry.createInvoice(p);
         vm.prank(acme);
         registry.pay(newId, AMOUNT);
-        assertEq(receipt.ownerOf(newId), ravi);
+        assertEq(receipt.ownerOf(newId), receipt.SINK());
     }
 
     function test_IsOverdue() public {
@@ -436,6 +425,6 @@ contract RegistryTest is BaseTest {
         }
         Invoice memory inv = _inv(id);
         assertLe(inv.paid, inv.amount);
-        assertEq(receipt.balanceOf(ravi), inv.paid == inv.amount ? 1 : 0);
+        assertEq(receipt.balanceOf(receipt.SINK()), inv.paid == inv.amount ? 1 : 0);
     }
 }
