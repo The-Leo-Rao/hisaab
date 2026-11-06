@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { isAddress, type Hex } from "viem";
 import { useSwitchChain, useWalletClient } from "wagmi";
-import { explainError } from "@hisaab/core";
+import { approvalCommitment, decodeFragment, explainError, parseLink, walletCommitment } from "@hisaab/core";
 import { useHisaab } from "@/lib/hisaab";
+import { nameSaltFor } from "@/lib/sealed";
+import { loadDoc } from "@/lib/store";
 import { api, type EnsName, type UnsignedTx } from "@/lib/api";
 import { sepolia } from "@/lib/wagmi";
 import { longDate, middle, same } from "@/lib/format";
@@ -88,7 +90,7 @@ function useRunner() {
     setBusy(false);
     after?.();
   }
-  return { run, steps, error, busy };
+  return { run, steps, error, busy, fail: setError };
 }
 
 export function IdentityView() {
@@ -182,9 +184,11 @@ export function IdentityView() {
 }
 
 function RecordsForm({ name, defaultController, defaultIssuer, onDone }: { name: string; defaultController: string; defaultIssuer: string; onDone: () => void }) {
-  const { cfg } = useHisaab();
+  const { cfg, signer } = useHisaab();
   const [from, setFrom] = useState(defaultController);
-  const [issuer, setIssuer] = useState(defaultIssuer);
+  const [sealedWallet, setSealedWallet] = useState("");
+  const [sealing, setSealing] = useState(false);
+  const issuerIsMe = !!signer && same(signer.account.address, defaultIssuer);
   const contractorish = useMemo(() => name.split(".").length >= 4, [name]);
   const [kind, setKind] = useState<"freelance" | "contractor">(contractorish ? "contractor" : "freelance");
   const [employer, setEmployer] = useState(name.split(".").slice(-2).join("."));
@@ -202,15 +206,15 @@ function RecordsForm({ name, defaultController, defaultIssuer, onDone }: { name:
         e.preventDefault();
         r.run(async () => {
           if (!isAddress(from)) throw new Error("Enter the wallet that controls this name.");
-          if (!isAddress(issuer)) throw new Error("Enter the Whitechain wallet that will issue invoices under this name.");
-          const res = await api.ensRecords({ name, from, issuer, kind, employer: kind === "contractor" ? employer : undefined, role: role || undefined, client: client || undefined });
+          if (!/^0x[0-9a-fA-F]{64}$/.test(sealedWallet)) throw new Error("Paste the issuer's sealed wallet value, or make yours with “Seal my wallet”.");
+          const res = await api.ensRecords({ name, from, walletCommitment: sealedWallet, kind, employer: kind === "contractor" ? employer : undefined, role: role || undefined, client: client || undefined });
           return res.transactions.map((tx) => ({ label: `Set ${tx.key ?? "record"}`, tx }));
         }, onDone);
       }}
     >
       <div>
         <h3 className="title">Set Hisaab records</h3>
-        <p className="mt-1 text-sm text-ink-2">Links this name to the Whitechain wallet that issues invoices, and to the registry. Sent from the name&apos;s controller.</p>
+        <p className="mt-1 text-sm text-ink-2">Links this name to the wallet that issues invoices without publishing that wallet: ENS only stores a sealed value that a verifier can check once they hold an invoice and its key.</p>
       </div>
       <div className="flex gap-2">
         {(["freelance", "contractor"] as const).map((k) => (
@@ -223,8 +227,30 @@ function RecordsForm({ name, defaultController, defaultIssuer, onDone }: { name:
         <Field label="Controller wallet (Sepolia)">
           <Input value={from} onChange={(e) => setFrom(e.target.value.trim())} className="num" />
         </Field>
-        <Field label="Issuer wallet (Whitechain)">
-          <Input value={issuer} onChange={(e) => setIssuer(e.target.value.trim())} className="num" />
+        <Field label="Issuer's sealed wallet" hint={issuerIsMe ? "Signed by your Whitechain wallet. The signature stays in this browser." : "The issuer makes this on their own Identity page and sends it to you."}>
+          <div className="flex gap-2">
+            <Input value={sealedWallet} onChange={(e) => setSealedWallet(e.target.value.trim())} placeholder="0x…" className="num min-w-0 flex-1" />
+            {issuerIsMe && (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={sealing}
+                onClick={async () => {
+                  if (!signer) return;
+                  setSealing(true);
+                  try {
+                    setSealedWallet(walletCommitment(signer.account.address, await nameSaltFor(signer, name)));
+                  } catch (e) {
+                    r.fail(explainError(e));
+                  } finally {
+                    setSealing(false);
+                  }
+                }}
+              >
+                Seal my wallet
+              </Button>
+            )}
+          </div>
         </Field>
         {kind === "contractor" ? (
           <>
@@ -251,7 +277,7 @@ function RecordsForm({ name, defaultController, defaultIssuer, onDone }: { name:
 
 function AckForm({ name, controller, client, onDone }: { name: string; controller: string; client: string; onDone: () => void }) {
   const { cfg } = useHisaab();
-  const [invoiceId, setInvoiceId] = useState("");
+  const [ref, setRef] = useState("");
   const [clientWallet, setClientWallet] = useState(client);
   const r = useRunner();
   useEffect(() => setClientWallet(client), [client]);
@@ -275,8 +301,27 @@ function AckForm({ name, controller, client, onDone }: { name: string; controlle
           Grant client role
         </Button>
         <div className="flex gap-2">
-          <Input value={invoiceId} onChange={(e) => setInvoiceId(e.target.value.replace(/\D/g, ""))} placeholder="Invoice #" className="num w-28" aria-label="Invoice number" />
-          <Button disabled={r.busy || !invoiceId} onClick={() => r.run(async () => [{ label: `Acknowledge invoice #${invoiceId}`, tx: await api.approve({ name, from: clientWallet, invoiceId }) }], onDone)}>
+          <Input value={ref} onChange={(e) => setRef(e.target.value.trim())} placeholder="Pay link or invoice #" className="num w-56" aria-label="Pay link or invoice number" />
+          <Button
+            disabled={r.busy || !ref}
+            onClick={() =>
+              r.run(async () => {
+                let id: bigint;
+                let doc = null;
+                if (/^\d+$/.test(ref)) {
+                  id = BigInt(ref);
+                  const inv = await cfg?.hisaab.getInvoice(id);
+                  doc = inv ? loadDoc(inv.docHash) : null;
+                } else {
+                  const p = parseLink(ref);
+                  id = p.id;
+                  doc = await decodeFragment(p.fragment);
+                }
+                if (!doc) throw new Error("This browser doesn't have that invoice. Paste its pay link instead.");
+                return [{ label: `Acknowledge invoice #${id}`, tx: await api.approve({ name, from: clientWallet, approval: approvalCommitment(id, doc.salt) }) }];
+              }, onDone)
+            }
+          >
             Acknowledge
           </Button>
         </div>
