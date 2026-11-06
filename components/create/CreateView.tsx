@@ -89,7 +89,7 @@ function defaults(mode: Mode, ctx: Ctx): Form {
       ...base,
       issuerName: identity?.persona === "contractor" ? identity.ens ?? "" : "",
       invoiceNumber: `${handle}/${p.from.slice(0, 7)}/001`,
-      lines: [{ description: `Design services, ${monthName(p.from)}`, qty: "160", unitPrice: "12.50" }],
+      lines: [{ description: `Contract services, ${monthName(p.from)}`, qty: "160", unitPrice: "12.50" }],
       employer: company?.ens ?? "",
       role: identity?.persona === "contractor" ? (identity.key === "priya" ? "Product Designer, contract" : "QA Engineer, contract") : "",
       periodFrom: p.from,
