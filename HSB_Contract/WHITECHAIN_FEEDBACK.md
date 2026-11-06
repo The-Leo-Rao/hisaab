@@ -61,5 +61,22 @@ and faucet were all easy to find from the prize page.
 
 We also paid 10 contractor invoices from one company wallet: 1 approval plus 10 payments, at about 187k gas each.
 
+## Going live on the testnet
+
+Deploying for real (not on a fork) went fine overall. The receipt and registry went out in one `forge script`, about
+7.8M gas, roughly 0.04 WBT at 5 gwei. A real `createInvoice` used 178k gas. A few things we only hit on the live network:
+
+- **Verifying a `via_ir` contract.** The registry verified straight from `forge script --verify`. The receipt didn't:
+  Blockscout said "Unable to verify". The receipt was byte-for-byte what we compiled, but only when it was compiled
+  together with the deploy script. `forge verify-contract` builds a smaller source set, and with `via_ir` that moved the
+  bytecode by 12 bytes. What fixed it was sending Blockscout the exact compiler input from the script's build-info
+  (`/api/v2/smart-contracts/<addr>/verification/via/standard-input`). A line about this in the verify docs would save
+  people an hour.
+- **Wallets.** Phantom's EVM side can't add custom networks, so it can't sign on chain 1874 at all. It just answers
+  "The Provider is not connected to the requested chain." MetaMask and Rabby are fine. Worth saying which wallets work on
+  the network page.
+- **Faucet.** One drip of WBT was plenty for both contracts plus a relayer budget. Getting test USDT
+  was the slower part: `mint` is owner-only, so we had to ask the team for it.
+
 Overall, the chain itself never got in our way. Nearly all of our friction was about missing information, not things
 being broken.
