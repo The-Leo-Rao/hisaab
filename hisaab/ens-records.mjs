@@ -1,5 +1,6 @@
 import { encodeFunctionData, isAddress, parseAbi, stringToHex, toHex } from 'viem'
 import { packetToBytes } from 'viem/ens'
+import { approvalCommitment, isHex32, walletCommitment } from './commit.mjs'
 import { config } from './config.mjs'
 import { ens, normalizeName, readName } from './ens-read.mjs'
 
@@ -25,13 +26,20 @@ function tx(action, name, from, to, data, metadata = {}) {
   }
 }
 
-export function recordPlan({ name, issuer, kind = 'freelance', employer, role, client }) {
+export function sealedWallet({ issuer, nameSalt, walletCommitment: given }) {
+  if (isHex32(given)) return given
+  if (!issuer || !isAddress(issuer)) throw fail('Send walletCommitment (keccak256 of the issuer wallet and its name secret), or issuer plus nameSalt.')
+  if (!isHex32(nameSalt)) throw fail('nameSalt must be 32 bytes. Hisaab never publishes a plain issuer wallet on ENS.')
+  return walletCommitment(issuer, nameSalt)
+}
+
+export function recordPlan({ name, issuer, nameSalt, walletCommitment: given, kind = 'freelance', employer, role, client }) {
   if (!normalizeName(name)) throw fail('name must be a valid ENS name.')
-  if (!issuer || !isAddress(issuer)) throw fail('issuer must be the wallet that will issue invoices under this name.')
+  const sealed = sealedWallet({ issuer, nameSalt, walletCommitment: given })
   if (!config.registry) throw fail('Hisaab registry is not configured on this server.', 503)
   const records = [
     { key: 'hisaab.registry', value: `${config.wcChainId}:${config.registry}` },
-    { key: 'hisaab.wallet', value: issuer },
+    { key: 'hisaab.wallet', value: sealed },
   ]
   if (kind === 'contractor') {
     if (!employer) throw fail('employer is required for contractor names, for example acme-labs.eth.')
@@ -88,15 +96,16 @@ export async function prepareClientApprovalRole({ name, from, client }) {
   return tx('grant-client-approval', n, from, resolver, data, { client, key: 'hisaab.approved' })
 }
 
-export async function prepareApproval({ name, from, invoiceId }) {
+export async function prepareApproval({ name, from, approval, invoiceId, salt }) {
   const n = normalizeName(name)
   if (!n) throw fail('name must be a valid ENS name.')
   if (!isAddress(from)) throw fail('from must be the client wallet.')
-  if (!/^\d+$/.test(String(invoiceId ?? ''))) throw fail('invoiceId must be an integer.')
+  let entry = isHex32(approval) ? approval.toLowerCase() : null
+  if (!entry && /^\d+$/.test(String(invoiceId ?? '')) && isHex32(salt)) entry = approvalCommitment(invoiceId, salt).toLowerCase()
+  if (!entry) throw fail('Send approval (keccak256 of the invoice id and the invoice salt), or invoiceId plus salt. Plain invoice ids are not written to ENS.')
   const info = await readName(n, ['hisaab.approved'])
   if (!info.resolver) throw fail(`${n} has no resolver.`, 409)
-  const existing = (info.records['hisaab.approved'] || '').split(',').map((s) => s.trim()).filter(Boolean)
-  const entry = `invoice:${invoiceId}`
+  const existing = (info.records['hisaab.approved'] || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
   const value = existing.includes(entry) ? existing.join(',') : [...existing, entry].join(',')
   const encoded = stringToHex(value)
   const data = encodeFunctionData({ abi: resolverAbi, functionName: 'setData', args: [toHex(packetToBytes(n)), 'hisaab.approved', encoded] })
