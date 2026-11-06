@@ -1,0 +1,14 @@
+{
+  "name": "hisaab",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "abi": "npm run abi -w @hisaab/core",
+    "deploy:local": "npm run deploy:local -w @hisaab/core",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "e2e": "npm run e2e -w @hisaab/core"
+  }
+}
