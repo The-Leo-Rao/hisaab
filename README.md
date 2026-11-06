@@ -1,6 +1,6 @@
 # Hisaab ENSv2 API
 
-UI-free ENSv2 transaction preparation service. Every endpoint returns unsigned transaction data; the connected browser wallet signs and broadcasts. This API never receives a private key.
+UI-free ENSv2 transaction preparation service with an optional Hisaab invoice/verification module. Every endpoint returns unsigned transaction data; the connected browser wallet signs and broadcasts. This API never receives a private key.
 
 ## Run
 
@@ -13,26 +13,42 @@ The API listens on `http://localhost:3000` (override with `PORT=`).
 
 ## Network selection
 
-`.env` controls the chain profile:
+`.env` controls the chain profiles:
 
 ```dotenv
 VITE_NETWORK=sepolia
-```
-
-Profiles are defined in [`network.mjs`](./network.mjs). To use a private RPC, set the matching override:
-
-```dotenv
 VITE_SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
 VITE_MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com
+
+# Hisaab / Whitechain configuration
+WC_RPC=https://rpc.testnet.whitechain.io
+HISAAB_REGISTRY=0x...
+HISAAB_RECEIPT=0x...
+HISAAB_DEPLOY_BLOCK=0
+HISAAB_PUBLIC_BASE=http://localhost:3000
 ```
+
+Profiles are defined in [`network.mjs`](./network.mjs). To use a private RPC, set the matching override.
 
 Top-level `.eth` registration is only enabled on **Sepolia** because it uses the ENSv2 registrar + MockUSDC test token. Mainnet supports hierarchy management only.
 
+The server prints a startup configuration status for ENS/Sepolia and Whitechain so you can confirm both RPC connections and contract configurations on launch.
+
 ---
 
-## Endpoint reference
+## Endpoint namespaces
 
-All endpoints return JSON. `POST` transaction-building endpoints return an unsigned transaction object:
+- `/api/v1/ens/*` — ENSv2 transaction preparation
+- `/api/v1/hisaab/*` — Hisaab invoice, receipt, verification, and ENS-record setup
+- `/verify/*` — Self-contained invoice verification UI
+
+Hisaab routes are handled first; ENS routes act as the fallback.
+
+---
+
+## Prepared transaction shape
+
+All `POST` transaction-building endpoints return an unsigned transaction object:
 
 ```json
 {
@@ -43,13 +59,26 @@ All endpoints return JSON. `POST` transaction-building endpoints return an unsig
   "data": "0x...",
   "value": "0x0",
   "chainId": 11155111,
-  ...metadata...
+  ...metadata...,
+  "metadata": { ... },
+  "note": "Unsigned transaction..."
 }
 ```
 
-Pass `to`, `data`, `value`, and `chainId` to the connected wallet (`viem`, `ethers`, MetaMask, etc.).
+For wallet submission, select only the top-level `to`, `data`, `value`, and `chainId` fields.
+
+### Metadata compatibility for data writes
+
+Resolver data-write responses include both shapes during migration:
+
+- Canonical field: `metadata.encodedValue`
+- Legacy compatibility field: `metadata.value`
+
+Both contain the encoded bytes stored by `setData`. The top-level `value` field is always the transaction value (`0x0` for data writes), so wallet submission is unambiguous.
 
 ---
+
+## ENSv2 endpoint reference
 
 ### Status / connection check
 
@@ -57,7 +86,7 @@ Pass `to`, `data`, `value`, and `chainId` to the connected wallet (`viem`, `ethe
 curl http://localhost:3000/api/v1/ens/status
 ```
 
-Returns the active network, chain ID, and contract addresses so the frontend can confirm it is pointing at the right service.
+Returns the active network, chain ID, and contract addresses.
 
 ---
 
@@ -115,7 +144,7 @@ Returns `committedAt`, `minCommitmentAge`, `remainingSeconds`, and `canReveal`.
 
 ### Verify ENS wallet ownership for sign-in
 
-Request a single-use, five-minute challenge for the ENS name and wallet:
+Request a single-use, five-minute challenge:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/ens/auth/challenge \
@@ -123,7 +152,7 @@ curl -X POST http://localhost:3000/api/v1/ens/auth/challenge \
   -d '{"name":"myname.eth","address":"0xWALLET"}'
 ```
 
-Sign the returned `message` with that wallet (for example, with `walletClient.signMessage({ account, message })`), then submit the signature:
+Sign the returned `message`, then submit:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/ens/auth/verify \
@@ -131,7 +160,7 @@ curl -X POST http://localhost:3000/api/v1/ens/auth/verify \
   -d '{"challengeId":"0xCHALLENGE_ID","signature":"0xSIGNATURE"}'
 ```
 
-The response has `verified: true` only when the signature recovers to the challenged wallet and that wallet is the current ENSv2 owner of the name on the configured network. Challenges expire after five minutes and can be used once. The challenge store is in memory, so outstanding challenges are cleared when the API process restarts.
+The response has `verified: true` only when the signature recovers to the challenged wallet and that wallet is the current ENSv2 owner.
 
 ---
 
@@ -149,7 +178,7 @@ curl -X POST http://localhost:3000/api/v1/ens/register/prepare-reveal \
   }'
 ```
 
-Must use the exact same `name`, `owner`, `duration`, `secret`, `subregistry`, `resolver`, and `referrer` values that were used for commit. The API re-derives the commitment, checks its age, re-checks availability/price, and returns the unsigned `register` transaction.
+Must use the exact same values from commit.
 
 ---
 
@@ -159,77 +188,49 @@ Must use the exact same `name`, `owner`, `duration`, `secret`, `subregistry`, `r
 curl 'http://localhost:3000/api/v1/ens/children/status?parent=iownthis.eth&from=0xROOT_PARENT_WALLET'
 ```
 
-Returns the child registry address and whether `from` can create, modify resolver, extend expiry, and revoke children.
+---
+
+### List a name's subregistry attachments
+
+```bash
+curl 'http://localhost:3000/api/v1/ens/subregistries?parent=team.iownthis.eth'
+```
+
+Returns the current subregistry and every non-zero subregistry ever attached to the name, with ordered event history. Add `fromBlock=<block-number>` to limit the search.
 
 ---
 
-### Create a child subname
+### Create, modify, and revoke child subnames
+
+Create:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/ens/children/create \
   -H 'content-type: application/json' \
-  -d '{
-    "name": "team.iownthis.eth",
-    "from": "0xROOT_PARENT_WALLET"
-  }'
+  -d '{ "name": "team.iownthis.eth", "from": "0xROOT_PARENT_WALLET" }'
 ```
 
-Optional inputs:
-
-- `expiry`: future Unix timestamp. Defaults to one year from now.
-- `resolver`: an existing resolver address.
-- `childRegistry`: an already deployed UserRegistry address if this child should become a parent.
-
-There is intentionally no `owner` input. The root-parent wallet always owns the child, and the child role bitmap is `0`.
-
----
-
-### Modify a child subname
-
-Set the resolver:
+Modify resolver or expiry:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/ens/children/modify \
   -H 'content-type: application/json' \
-  -d '{
-    "name": "team.iownthis.eth",
-    "from": "0xROOT_PARENT_WALLET",
-    "resolver": "0xRESOLVER"
-  }'
+  -d '{ "name": "team.iownthis.eth", "from": "0xROOT_PARENT_WALLET", "expiry": 1800000000 }'
 ```
 
-Extend expiry:
-
-```bash
-curl -X POST http://localhost:3000/api/v1/ens/children/modify \
-  -H 'content-type: application/json' \
-  -d '{
-    "name": "team.iownthis.eth",
-    "from": "0xROOT_PARENT_WALLET",
-    "expiry": 1800000000
-  }'
-```
-
----
-
-### Revoke a child subname
+Revoke:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/ens/children/revoke \
   -H 'content-type: application/json' \
-  -d '{
-    "name": "team.iownthis.eth",
-    "from": "0xROOT_PARENT_WALLET"
-  }'
+  -d '{ "name": "team.iownthis.eth", "from": "0xROOT_PARENT_WALLET" }'
 ```
 
 ---
 
-### Register a subchild and optionally write pure data
+### Subchild registration and data
 
-This route uses ENSv2's exposed `UserRegistry.register()` function on the
-registry attached to `parent`. It accepts one label (not a dotted name), so it
-can safely create deeper names such as `invoice.team.iownthis.eth`.
+Register a subchild:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/ens/subchildren/register \
@@ -239,64 +240,121 @@ curl -X POST http://localhost:3000/api/v1/ens/subchildren/register \
     "label": "invoice",
     "from": "0xROOT_PARENT_WALLET",
     "resolver": "0xPERMISSIONED_RESOLVER",
-    "data": {
-      "key": "com.hisaab.invoice",
-      "value": "INV-2026-0001",
-      "encoding": "utf8"
-    }
+    "data": { "key": "com.hisaab.invoice", "value": "INV-2026-0001", "encoding": "utf8" }
   }'
 ```
 
-The response always contains `registration`, an unsigned transaction for the
-parent registry. When `data` is supplied it also contains `dataWrite`, an
-unsigned `PermissionedResolver.setData(bytes,string,bytes)` transaction. Send
-`registration` first and wait for confirmation before sending `dataWrite`.
-They cannot be combined into one transaction because they target different
-contracts.
-
-`data.value` is UTF-8 by default. Set `encoding` to `hex` and pass an even-size
-`0x...` byte string to store arbitrary binary data. The connected wallet must
-have `ROLE_SET_DATA` on the resolver, either globally or for that data key; the
-API checks this before returning `dataWrite`.
-
-### Unregister a subchild
+Write data on an existing subchild:
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/ens/subchildren/unregister \
-  -H 'content-type: application/json' \
-  -d '{
-    "name": "invoice.team.iownthis.eth",
-    "from": "0xROOT_PARENT_WALLET"
-  }'
-```
-
-This prepares an unsigned `UserRegistry.unregister(...)` transaction. The root-parent wallet must control the hierarchy and have its parent registry's `ROLE_UNREGISTER` permission.
-
----
-
-### Update data on an existing subchild
-
-Use the resolver already attached to the active name:
-
-```bash
-curl -X POST http://localhost:3000/api/v1/ens/subchildren/update-data \
+curl -X POST http://localhost:3000/api/v1/ens/subchildren/set-data \
   -H 'content-type: application/json' \
   -d '{
     "name": "invoice.team.iownthis.eth",
     "from": "0xROOT_PARENT_WALLET",
-    "data": {
-      "key": "com.hisaab.invoice",
-      "value": "0xdeadbeef",
-      "encoding": "hex"
-    }
+    "data": { "key": "com.hisaab.invoice", "value": "0xdeadbeef", "encoding": "hex" }
   }'
 ```
 
-This returns one unsigned resolver transaction. The parent hierarchy must be
-controlled by `from`, the name must be active with a resolver, and `from` must
-hold the resolver's required data-write role.
+Legacy base-only aliases are retained:
 
-`/api/v1/ens/subchildren/set-data` remains supported as an alias for existing clients.
+- `POST /api/v1/ens/subchildren/update-data` → same as `set-data`
+- `POST /api/v1/ens/subchildren/unregister` → same as `children/revoke`
+
+---
+
+## Hisaab endpoint reference
+
+Hisaab adds invoice verification on Whitechain testnet. Set `HISAAB_REGISTRY` and `HISAAB_RECEIPT` to enable it.
+
+### Hisaab status
+
+```bash
+curl http://localhost:3000/api/v1/hisaab/status
+```
+
+### Invoice lookup
+
+```bash
+curl http://localhost:3000/api/v1/hisaab/invoice/15
+```
+
+### Receipt NFT
+
+```bash
+curl http://localhost:3000/api/v1/hisaab/receipt/15
+```
+
+### Verify an invoice
+
+Onchain only:
+
+```bash
+curl http://localhost:3000/api/v1/hisaab/verify/15
+```
+
+With a document or PDF:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/hisaab/verify \
+  -H 'content-type: application/json' \
+  -d '{ "id": 15, "document": { ... } }'
+```
+
+### QR codes and PDFs
+
+```bash
+curl http://localhost:3000/api/v1/hisaab/qr/15.svg
+curl http://localhost:3000/api/v1/hisaab/qr/15.png?size=480
+curl http://localhost:3000/api/v1/hisaab/statement/15.pdf
+curl -X POST http://localhost:3000/api/v1/hisaab/statement -H 'content-type: application/json' -d '{ "id": 15, "document": { ... } }'
+curl -X POST http://localhost:3000/api/v1/hisaab/invoice-pdf -H 'content-type: application/json' -d '{ "id": 15, "document": { ... } }'
+```
+
+### ENS record setup for Hisaab
+
+Plan and prepare ENS records:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/hisaab/ens/records \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "alice.dev.acme-labs.eth",
+    "from": "0xROOT_PARENT_WALLET",
+    "kind": "contractor",
+    "issuer": "0xWHITECHAIN_WALLET",
+    "employer": "acme-labs.eth",
+    "role": "Engineer"
+  }'
+```
+
+For subnames, this endpoint internally calls `/api/v1/ens/subchildren/set-data` for each record.
+
+Grant a client approval role:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/hisaab/ens/client-role \
+  -H 'content-type: application/json' \
+  -d '{ "name": "engagement.ravi-dev.eth", "from": "0xISSUER", "client": "0xCLIENT" }'
+```
+
+Approve a specific invoice:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/hisaab/ens/approve \
+  -H 'content-type: application/json' \
+  -d '{ "name": "engagement.ravi-dev.eth", "from": "0xCLIENT", "invoiceId": 15 }'
+```
+
+---
+
+## Testing
+
+```bash
+npm run test:unit   # Pure helper tests, no network required
+npm run check       # Smoke-test against a running server
+npm run test        # Full contract + frontend compatibility matrix (requires .ens-demo.json)
+```
 
 ---
 
@@ -308,7 +366,7 @@ const quote = await fetch(
   '/api/v1/ens/register/quote?name=myname.eth&owner=' + account
 ).then(r => r.json())
 
-// 2. Prepare commit (API generates secret; store it)
+// 2. Prepare commit
 const commit = await fetch('/api/v1/ens/register/prepare-commit', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -319,7 +377,7 @@ const commitHash = await walletClient.sendTransaction({
   account,
   to: commit.to,
   data: commit.data,
-  value: 0n,
+  value: BigInt(commit.value),
   chain: sepolia,
 })
 
@@ -349,7 +407,7 @@ const registerHash = await walletClient.sendTransaction({
   account,
   to: reveal.to,
   data: reveal.data,
-  value: 0n,
+  value: BigInt(reveal.value),
   chain: sepolia,
 })
 ```
@@ -379,4 +437,5 @@ The API verifies that `from` is the active owner of the top-level parent before 
 
 - The API is stateless. For top-level registration, the frontend must keep the `secret` returned by `prepare-commit` and pass it back to `prepare-reveal`.
 - MockUSDC mint and approve transactions are not provided by this API; build them directly against the token contract (`network.paymentToken`) in the frontend.
-- The root parent must already have a child `UserRegistry`/subregistry attached and the root wallet must already hold the required root roles. Deploying and configuring those registries is a separate ENSv2 setup step.
+- The root parent must already have a child `UserRegistry`/subregistry attached and the root wallet must already hold the required root roles.
+- ENS/Sepolia and Whitechain are independent configurations; the server reports the status of each at startup.

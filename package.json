@@ -4,7 +4,17 @@
   "type": "module",
   "scripts": {
     "api": "node --env-file-if-exists=.env server.mjs",
-    "cli": "node --env-file-if-exists=.env cli.mjs"
+    "cli": "node --env-file-if-exists=.env cli.mjs",
+    "demo:ens": "node --env-file-if-exists=.env hisaab/scripts/setup-demo.mjs",
+    "demo:act": "node --env-file-if-exists=.env hisaab/scripts/demo-act.mjs",
+    "check": "node --env-file-if-exists=.env hisaab/scripts/check-endpoints.mjs",
+    "test": "node --env-file-if-exists=.env hisaab/scripts/test-all.mjs",
+    "test:unit": "node --env-file-if-exists=.env hisaab/scripts/test-unit.mjs"
   },
-  "dependencies": { "viem": "^2.35.0" }
+  "dependencies": {
+    "canonicalize": "^2.1.0",
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4",
+    "viem": "^2.35.0"
+  }
 }
