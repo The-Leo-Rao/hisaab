@@ -11,6 +11,12 @@ import {
   decodeFragment,
   docHash,
   formatMoney,
+  generateInvoiceKey,
+  issuerCommitment,
+  keyFromFragment,
+  openInvoice,
+  RECEIPT_SINK,
+  sealInvoice,
   parseLink,
   payLink,
   receiptAbi,
@@ -43,7 +49,7 @@ function doc(n: string, client: Signer | null, lines: { description: string; qty
     invoiceNumber: n,
     issueDate: "2026-11-06",
     dueDate: "2026-11-20",
-    supplier: { legalName: "Ravi Desai", ens: "acme-q4.ravi-dev.eth", wallet: ravi.account.address },
+    supplier: { legalName: "Ravi Desai", ens: "acme-q4.ravi-dev.eth", wallet: ravi.account.address, nameSalt: "0x" + "ab".repeat(32) },
     customer: { legalName: "Acme Labs Inc.", ens: "acme-labs.eth", wallet: client?.account.address },
     lines,
     settlement,
@@ -69,12 +75,24 @@ await step("freelancer: create, link round-trip, pay with wallet, receipt", asyn
     docHash: docHash(d),
     issuerName: "acme-q4.ravi-dev.eth",
     clientName: "acme-labs.eth",
+    salt: d.salt,
   });
-  const link = await payLink("http://localhost:5173", id, d);
+  const onchain = (await hisaab.getInvoice(id))!;
+  assert.equal(onchain.issuerName, "");
+  assert.equal(onchain.clientName, "");
+  assert.equal(onchain.issuerNode, issuerCommitment("acme-q4.ravi-dev.eth", d.salt));
+  const key = generateInvoiceKey(id);
+  const link = await payLink("http://localhost:5173", id, d, key);
   const parsed = parseLink(link);
   assert.equal(parsed.id, id);
+  assert.equal(keyFromFragment(parsed.fragment), key);
   const back = await decodeFragment(parsed.fragment);
-  assert.equal(docHash(back!), (await hisaab.getInvoice(id))!.docHash);
+  assert.equal(docHash(back!), onchain.docHash);
+  const sealed = await sealInvoice(d, id, key);
+  assert.equal(sealed.docHash, onchain.docHash);
+  assert.equal(JSON.stringify(sealed).includes("Ravi"), false);
+  assert.equal((await openInvoice(sealed, key)).invoiceNumber, "RD/0001");
+  await assert.rejects(openInvoice(sealed, generateInvoiceKey(id)));
 
   const before = await hisaab.usdtBalance(ravi.account.address);
   await hisaab.pay(acme, id, toUnits("200"));
@@ -82,7 +100,7 @@ await step("freelancer: create, link round-trip, pay with wallet, receipt", asyn
   const inv = (await hisaab.getInvoice(id))!;
   assert.equal(inv.status, "Paid");
   assert.equal((await hisaab.usdtBalance(ravi.account.address)) - before, toUnits("500"));
-  assert.equal(await hisaab.receiptOwner(id), ravi.account.address);
+  assert.equal(await hisaab.receiptOwner(id), RECEIPT_SINK);
   assert.equal((await hisaab.payments(id)).length, 2);
   assert.ok((await hisaab.receiptImage(id))?.startsWith("data:image/svg+xml;base64,"));
   lastPaid = id;
