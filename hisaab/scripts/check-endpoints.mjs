@@ -4,6 +4,7 @@ import { createPublicClient, encodeFunctionData, http, parseAbi, stringToHex, to
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { packetToBytes } from 'viem/ens'
 import { sepolia } from 'viem/chains'
+import { generateInvoiceKey, openInvoice, sealInvoice } from '../seal.mjs'
 
 const API = (process.env.API || 'http://localhost:3000').replace(/\/$/, '')
 const RELAY = process.env.RELAY_URL || 'http://localhost:5173/api/relay'
@@ -133,11 +134,18 @@ await check('hisaab GET receipt/:id (NFT with QR)', async () => {
   assert.ok(svg.includes('SCAN TO VERIFY') && svg.includes('scale(4)'))
   assert.ok(r.data.external_url.endsWith(`/verify/${ID}`))
 })
-await check('hisaab GET verify/:id (onchain only)', async () => {
+await check('hisaab GET verify/:id (sealed, public facts only)', async () => {
   const r = await call('GET', `/api/v1/hisaab/verify/${ID}`)
   const t = Object.fromEntries(r.data.checks.map((c) => [c.key, c.tone]))
   assert.equal(t.hash, 'grey')
   assert.equal(t.payment, 'green')
+  assert.equal(r.data.sealed, true)
+  assert.equal(r.data.unlocked, false)
+  assert.equal(t.issuer, undefined)
+  assert.equal(r.data.invoice.issuer, null)
+  assert.equal(r.data.invoice.issuerName, '')
+  assert.equal(r.data.ens.issuer, null)
+  assert.ok(r.data.payments.every((p) => !p.payer))
 })
 if (FRAGMENT) {
   await check('hisaab POST verify (fragment) -> verified', async () => {
@@ -149,13 +157,27 @@ if (FRAGMENT) {
     const r = await call('POST', '/api/v1/hisaab/verify', { id: ID, document: { ...doc, total: '5.00' } })
     assert.equal(r.data.checks[0].tone, 'red')
   })
-  await check('hisaab POST invoice-pdf -> POST verify (pdf) round-trip', async () => {
-    const pdf = await call('POST', '/api/v1/hisaab/invoice-pdf', { id: ID, fragment: FRAGMENT })
+  await check('hisaab sealed invoice-pdf: pdf alone is public, pdf + key verifies', async () => {
+    const doc = (await call('POST', '/api/v1/hisaab/verify', { id: ID, fragment: FRAGMENT })).data.document
+    const key = generateInvoiceKey(ID)
+    const pdf = await call('POST', '/api/v1/hisaab/invoice-pdf', { id: ID, sealed: await sealInvoice(doc, ID, key) })
     assert.equal(pdf.status, 200)
     assert.equal(pdf.type, 'application/pdf')
+    assert.equal(pdf.data.includes(doc.supplier.legalName), false)
+    assert.equal(pdf.data.includes(doc.supplier.ens), false)
     const r = await call('POST', '/api/v1/hisaab/verify', { pdf: pdf.data.toString('base64') })
     assert.equal(r.data.source, 'pdf')
-    assert.equal(r.data.verified, true)
+    assert.equal(r.data.verified, false)
+    assert.equal(r.data.needsKey, true)
+    assert.equal(r.data.document, null)
+    await assert.rejects(openInvoice(r.data.sealedDocument, generateInvoiceKey(ID)))
+    const opened = await openInvoice(r.data.sealedDocument, key)
+    const full = await call('POST', '/api/v1/hisaab/verify', { id: ID, document: opened })
+    assert.equal(full.data.verified, true)
+    assert.equal(full.data.unlocked, true)
+  })
+  await check('hisaab POST invoice-pdf without a sealed invoice -> 400', async () => {
+    assert.equal((await call('POST', '/api/v1/hisaab/invoice-pdf', { id: ID, fragment: FRAGMENT })).status, 400)
   })
   await check('hisaab POST statement (with document)', async () => {
     const r = await call('POST', '/api/v1/hisaab/statement', { id: ID, fragment: FRAGMENT })
@@ -164,7 +186,8 @@ if (FRAGMENT) {
   })
   await check('hisaab POST invoice-pdf tampered document -> 409', async () => {
     const doc = (await call('POST', '/api/v1/hisaab/verify', { id: ID, fragment: FRAGMENT })).data.document
-    assert.equal((await call('POST', '/api/v1/hisaab/invoice-pdf', { id: ID, document: { ...doc, total: '1.00' } })).status, 409)
+    const key = generateInvoiceKey(ID)
+    assert.equal((await call('POST', '/api/v1/hisaab/invoice-pdf', { id: ID, sealed: await sealInvoice({ ...doc, total: '1.00' }, ID, key) })).status, 409)
   })
 }
 await check('hisaab GET statement/:id.pdf', async () => {
@@ -182,8 +205,9 @@ await check('hisaab GET ens/name (contractor records)', async () => {
   assert.equal(r.data.records['hisaab.employer'], 'acme-labs.eth')
 })
 await check('hisaab POST ens/records (subname via teammate set-data)', async () => {
-  const r = await call('POST', '/api/v1/hisaab/ens/records', { name: 'arjun.dev.acme-labs.eth', from: acme, kind: 'contractor', issuer: demo.whitechainWallets.arjun, employer: 'acme-labs.eth', role: 'QA Lead, contract' })
+  const r = await call('POST', '/api/v1/hisaab/ens/records', { name: 'arjun.dev.acme-labs.eth', from: acme, kind: 'contractor', walletCommitment: `0x${'5a'.repeat(32)}`, employer: 'acme-labs.eth', role: 'QA Lead, contract' })
   assert.equal(r.status, 200)
+  assert.equal(r.data.records.find((x) => x.key === 'hisaab.wallet').value, `0x${'5a'.repeat(32)}`)
   assert.equal(r.data.via, '/api/v1/ens/subchildren/set-data')
   assert.ok(r.data.transactions.every(isTx))
 })
@@ -196,10 +220,17 @@ await check('hisaab POST ens/client-role', async () => {
   const r = await call('POST', '/api/v1/hisaab/ens/client-role', { name: 'acme-q4.ravi-dev.eth', from: ravi, client: acme })
   assert.ok(isTx(r.data))
 })
-await check('hisaab POST ens/approve', async () => {
-  const r = await call('POST', '/api/v1/hisaab/ens/approve', { name: 'acme-q4.ravi-dev.eth', from: acme, invoiceId: ID })
+await check('hisaab POST ens/records refuses a plain wallet', async () => {
+  const r = await call('POST', '/api/v1/hisaab/ens/records', { name: 'arjun.dev.acme-labs.eth', from: acme, kind: 'contractor', issuer: demo.whitechainWallets.arjun, employer: 'acme-labs.eth' })
+  assert.equal(r.status, 400)
+})
+await check('hisaab POST ens/approve (commitment, not the invoice id)', async () => {
+  const approval = `0x${'7b'.repeat(32)}`
+  const r = await call('POST', '/api/v1/hisaab/ens/approve', { name: 'acme-q4.ravi-dev.eth', from: acme, approval })
   assert.ok(isTx(r.data))
-  assert.ok(r.data.recordValue.includes(`invoice:${ID}`))
+  assert.ok(r.data.recordValue.includes(approval))
+  assert.equal(r.data.recordValue.includes(`invoice:${ID}`), false)
+  assert.equal((await call('POST', '/api/v1/hisaab/ens/approve', { name: 'acme-q4.ravi-dev.eth', from: acme, invoiceId: ID })).status, 400)
 })
 await check('EAC: client may write hisaab.approved but not hisaab.wallet', async () => {
   const pub = createPublicClient({ chain: { ...sepolia, rpcUrls: { default: { http: [demo.rpc] } } }, transport: http(demo.rpc) })

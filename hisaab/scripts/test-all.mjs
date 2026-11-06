@@ -225,8 +225,10 @@ if (FRAGMENT && hasDemo) {
     assert.equal(r.data.verified, true)
   })
 
-  await check('advanced frontend: invoice PDF generation', async () => {
-    const r = await call('POST', '/api/v1/hisaab/invoice-pdf', { id: ID, fragment: FRAGMENT })
+  await check('advanced frontend: sealed invoice PDF generation', async () => {
+    const { generateInvoiceKey, sealInvoice } = await import('../seal.mjs')
+    const doc = (await call('POST', '/api/v1/hisaab/verify', { id: ID, fragment: FRAGMENT })).data.document
+    const r = await call('POST', '/api/v1/hisaab/invoice-pdf', { id: ID, sealed: await sealInvoice(doc, ID, generateInvoiceKey(ID)) })
     assert.equal(r.status, 200)
     assert.equal(r.type, 'application/pdf')
     assert.equal(r.data.subarray(0, 5).toString(), '%PDF-')
@@ -241,7 +243,7 @@ if (FRAGMENT && hasDemo) {
 
 if (acme && hasDemo) {
   await check('advanced frontend: ENS record setup for Hisaab', async () => {
-    const r = await call('POST', '/api/v1/hisaab/ens/records', { name: 'arjun.dev.acme-labs.eth', from: acme, kind: 'contractor', issuer: demo.whitechainWallets.arjun, employer: 'acme-labs.eth', role: 'QA Lead, contract' })
+    const r = await call('POST', '/api/v1/hisaab/ens/records', { name: 'arjun.dev.acme-labs.eth', from: acme, kind: 'contractor', walletCommitment: `0x${'5a'.repeat(32)}`, employer: 'acme-labs.eth', role: 'QA Lead, contract' })
     assert.equal(r.status, 200)
     assert.equal(r.data.via, '/api/v1/ens/subchildren/set-data')
     assert.ok(r.data.transactions.every(isTx))
@@ -255,7 +257,7 @@ if (acme && hasDemo) {
 
   await check('hisaab internal call to /api/v1/ens/subchildren/set-data', async () => {
     // The previous test exercises this indirectly; this is an explicit probe.
-    const r = await call('POST', '/api/v1/hisaab/ens/records', { name: 'priya.dev.acme-labs.eth', from: acme, kind: 'contractor', issuer: demo.whitechainWallets.priya, employer: 'acme-labs.eth', role: 'Designer, contract' })
+    const r = await call('POST', '/api/v1/hisaab/ens/records', { name: 'priya.dev.acme-labs.eth', from: acme, kind: 'contractor', walletCommitment: `0x${'6b'.repeat(32)}`, employer: 'acme-labs.eth', role: 'Designer, contract' })
     assert.equal(r.status, 200)
     assert.equal(r.data.via, '/api/v1/ens/subchildren/set-data')
     assert.ok(r.data.transactions.length >= 2)
@@ -271,9 +273,10 @@ if (acme && hasDemo) {
   })
 
   await check('hisaab POST ens/approve', async () => {
-    const r = await call('POST', '/api/v1/hisaab/ens/approve', { name: 'acme-q4.ravi-dev.eth', from: acme, invoiceId: ID })
+    const approval = `0x${'7b'.repeat(32)}`
+    const r = await call('POST', '/api/v1/hisaab/ens/approve', { name: 'acme-q4.ravi-dev.eth', from: acme, approval })
     assert.ok(isTx(r.data))
-    assert.ok(r.data.recordValue.includes(`invoice:${ID}`))
+    assert.ok(r.data.recordValue.includes(approval))
   })
 }
 
