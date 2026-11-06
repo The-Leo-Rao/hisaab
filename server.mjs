@@ -60,7 +60,7 @@ const resolverWriteAbi = [
 const registryWriteAbi = [
   { type: 'function', name: 'register', stateMutability: 'nonpayable', inputs: [
     { name: 'label', type: 'string' }, { name: 'owner', type: 'address' }, { name: 'registry', type: 'address' },
-    { name: 'resolver', type: 'address' }, { name: 'roleBitmap', type: 'uint64' }, { name: 'expiry', type: 'uint64' },
+    { name: 'resolver', type: 'address' }, { name: 'roleBitmap', type: 'uint256' }, { name: 'expiry', type: 'uint64' },
   ], outputs: [{ name: 'tokenId', type: 'uint256' }] },
   { type: 'function', name: 'setResolver', stateMutability: 'nonpayable', inputs: [{ name: 'anyId', type: 'uint256' }, { name: 'resolver', type: 'address' }], outputs: [] },
   { type: 'function', name: 'renew', stateMutability: 'nonpayable', inputs: [{ name: 'anyId', type: 'uint256' }, { name: 'newExpiry', type: 'uint64' }], outputs: [] },
