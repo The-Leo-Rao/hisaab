@@ -82,13 +82,14 @@
       <button id="stmt" class="hidden">Download Hisaab Statement (PDF)</button>
       <button id="invpdf" class="light hidden">Download invoice PDF</button>
     </div>
-    <label class="drop" id="drop"><input id="file" type="file" accept="application/pdf" class="hidden" />Drop the invoice or statement PDF here (or click) to check the document itself.</label>
+    <label class="drop" id="drop"><input id="file" type="file" accept="application/pdf" class="hidden" />Drop the sealed invoice PDF here (or click). You'll need its invoice key too.</label>
+    <form id="keyBox" class="actions hidden" style="margin-top:14px"><input id="keyInput" autocomplete="off" spellcheck="false" placeholder="Invoice key, e.g. HSB15-7KQ2-M9XD-…" aria-label="Invoice key" style="flex:1;min-width:0" /><button>Unlock</button></form>
     <p class="muted" id="docNote"></p>
   </section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id)
-const state = { id: null, document: null, result: null }
+const state = { id: null, document: null, result: null, sealed: null, key: null }
 const short = (a) => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '-')
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 const money = (u) => { const s = BigInt(u).toString().padStart(7, '0'); const w = s.slice(0, -6); const f = s.slice(-6).replace(/0+$/, '').padEnd(2, '0'); return `${BigInt(w)}.${f}` }
@@ -100,6 +101,44 @@ async function decodeFragment(hash) {
   const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
   const out = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
   return JSON.parse(await new Response(out).text())
+}
+
+const ALPHA = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+const hexBytes = (h) => Uint8Array.from(h.slice(2).match(/../g), (x) => parseInt(x, 16))
+const fromB64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0))
+const toB64u = (u) => { let b = ''; for (const x of u) b += String.fromCharCode(x); return btoa(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') }
+
+function parseKey(input) {
+  const raw = String(input || '').toUpperCase().replace(/\s+/g, '')
+  const m = raw.match(/^(?:HSB(\d+)-)?([0-9A-Z-]+)$/)
+  if (!m) return null
+  const body = m[2].replace(/-/g, '').replace(/[IL]/g, '1').replace(/O/g, '0')
+  if (body.length !== 26 || [...body].some((c) => !ALPHA.includes(c))) return null
+  return { id: m[1] || null, secret: body }
+}
+
+async function aesKey(input, docHash, id) {
+  const k = parseKey(input)
+  if (!k) throw new Error("That doesn't look like a Hisaab invoice key.")
+  if (k.id && k.id !== String(id)) throw new Error(`This key belongs to invoice #${k.id}, not #${id}.`)
+  const enc = new TextEncoder()
+  const ikm = await crypto.subtle.importKey('raw', enc.encode(k.secret), 'HKDF', false, ['deriveKey'])
+  return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: hexBytes(docHash), info: enc.encode(`hisaab/seal/v1/${id}`) }, ikm, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
+}
+
+async function openSealed(sealed, input) {
+  const k = await aesKey(input, sealed.docHash, sealed.id)
+  try {
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64u(sealed.iv), additionalData: hexBytes(sealed.docHash) }, k, fromB64u(sealed.ct))
+    return JSON.parse(new TextDecoder().decode(plain))
+  } catch { throw new Error('Wrong key for this invoice.') }
+}
+
+async function sealDoc(doc, id, docHash, input) {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const k = await aesKey(input, docHash, id)
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: hexBytes(docHash) }, k, new TextEncoder().encode(JSON.stringify(doc))))
+  return { v: 1, alg: 'A256GCM-HKDF-SHA256', id: String(id), docHash, iv: toB64u(iv), ct: toB64u(ct) }
 }
 
 async function api(path, body) {
@@ -117,17 +156,18 @@ function render(r) {
   if (!r.exists) { $('error').textContent = `Invoice #${r.id} does not exist on this registry.`; show('error'); ['verdict', 'result', 'details', 'lines', 'pays'].forEach((e) => show(e, false)); return }
   show('error', false)
   const tones = Object.fromEntries(r.checks.map((c) => [c.key, c.tone]))
-  const tone = r.verified ? 'green' : r.checks.some((c) => c.tone === 'red' && c.key !== 'hash') ? 'red' : 'amber'
+  const locked = r.sealed && !r.unlocked
+  const tone = r.verified ? 'green' : locked ? 'amber' : r.checks.some((c) => c.tone === 'red' && c.key !== 'hash') ? 'red' : 'amber'
   $('verdict').className = `card verdict v-${tone}`
   $('vIcon').textContent = tone === 'green' ? '✓' : tone === 'red' ? '✕' : '!'
-  $('vTitle').textContent = r.verified ? 'Verified' : tones.hash === 'grey' && tones.issuer === 'green' && tones.payment === 'green' ? 'Paid onchain. Add the document to check it' : 'Not fully verified'
-  $('vText').textContent = r.summary || 'Read each check below. A green result needs the document (A), the issuer (B) and the payment (D) to all be green.'
+  $('vTitle').textContent = r.verified ? 'Verified' : locked ? 'Sealed. Public facts only' : tones.hash === 'grey' && tones.issuer === 'green' && tones.payment === 'green' ? 'Paid onchain. Add the document to check it' : 'Not fully verified'
+  $('vText').textContent = r.summary || (locked ? 'This invoice does not say who it is between. Drop its PDF and enter the invoice key to check the parties.' : null) || 'Read each check below. A green result needs the document (A), the issuer (B) and the payment (D) to all be green.'
   show('verdict')
 
   $('checks').innerHTML = r.checks.map((c) => `<div class="check"><i class="dot d-${c.tone}"></i><div><b>${esc(c.label)}</b><span>${esc(c.text)}</span></div><em class="tag t-${c.tone}">${c.tone.toUpperCase()}</em></div>`).join('')
   $('receipt').innerHTML = r.receipt.exists
-    ? `<img alt="Hisaab receipt #${r.id}" src="${r.receipt.image}"/><p class="muted">Soulbound token #${r.id} · held by <span class="mono">${short(r.receipt.owner)}</span></p>`
-    : `<p class="muted">No receipt NFT. One is minted to the issuer only when the invoice is paid in full (and burned on a full refund).</p>`
+    ? `<img alt="Hisaab receipt #${r.id}" src="${r.receipt.image}"/><p class="muted">Soulbound token #${r.id} · minted to a dead address, so it doesn't point at anyone's wallet</p>`
+    : `<p class="muted">No receipt NFT. One is minted only when the invoice is paid in full (and burned on a full refund).</p>`
   show('result')
 
   const inv = r.invoice, doc = state.document
@@ -136,14 +176,14 @@ function render(r) {
     ['Status', inv.status],
     ['Amount', `${inv.amountText} USDT`],
     ['Paid', inv.refunded !== '0' ? `${inv.paidText} USDT (refunded ${inv.refundedText})` : `${inv.paidText} USDT`],
-    ['Issuer (ENS)', inv.issuerName || '-'],
-    ['Client (ENS)', inv.clientName || '-'],
+    ['Issuer (ENS)', inv.issuerName || doc?.supplier?.ens || (r.sealed ? 'Sealed' : '-')],
+    ['Client (ENS)', inv.clientName || doc?.customer?.ens || (r.sealed ? 'Sealed' : '-')],
     ['Supplier', doc?.supplier?.legalName ?? '—'],
     ['Customer', doc?.customer?.legalName ?? '—'],
     ['Created', inv.createdAtIso],
     ['Due', inv.dueDateIso],
-    ['Issuer wallet', short(inv.issuer)],
-    ['Payer wallet', inv.payer.startsWith('0x00000000') ? '-' : short(inv.payer)],
+    ['Issuer wallet', inv.issuer ? short(inv.issuer) : 'Sealed'],
+    ['Payer wallet', !inv.payer ? 'Sealed' : inv.payer.startsWith('0x00000000') ? '-' : short(inv.payer)],
   ]
   if (r.kind === 'contractor') kv.push(['Employer', r.ens.issuer.records['hisaab.employer']], ['Role', r.ens.issuer.records['hisaab.role'] || '-'])
   $('kv').innerHTML = kv.map(([k, v]) => `<div><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')
@@ -151,12 +191,13 @@ function render(r) {
 
   $('lineRows').innerHTML = (doc?.lines || []).map((l) => `<tr><td>${esc(l.description)}</td><td>${esc(l.qty)}</td><td>${esc(l.unitPrice)}</td><td>${esc(l.amount)}</td></tr>`).join('')
   show('lines', !!doc?.lines?.length)
-  $('payRows').innerHTML = r.payments.map((p) => `<tr><td>${money(p.amount)} USDT</td><td class="mono">${short(p.payer)}</td><td>${p.gasless ? 'gasless' : 'wallet'}</td><td><a class="mono" target="_blank" rel="noreferrer" href="${esc(p.explorer)}">${short(p.txHash)}</a></td></tr>`).join('')
+  $('payRows').innerHTML = r.payments.map((p) => `<tr><td>${money(p.amount)} USDT</td><td class="mono">${p.payer ? short(p.payer) : 'sealed'}</td><td>${p.gasless ? 'gasless' : 'wallet'}</td><td><a class="mono" target="_blank" rel="noreferrer" href="${esc(p.explorer)}">${short(p.txHash)}</a></td></tr>`).join('')
   show('pays', r.payments.length > 0)
 
   show('stmt')
-  show('invpdf', !!doc)
-  $('docNote').textContent = doc ? 'Document loaded: check A compares it with the onchain fingerprint.' : 'No document loaded yet: only onchain facts are checked.'
+  show('invpdf', !!doc && !!state.key)
+  show('keyBox', !!state.sealed && !doc)
+  $('docNote').textContent = doc ? 'Document unlocked in this browser: check A compares it with the onchain fingerprint.' : state.sealed ? 'Sealed PDF loaded. Enter its invoice key to unlock it. The key never leaves this page.' : 'No document loaded yet: only public onchain facts are shown.'
 }
 
 async function run(id) {
@@ -177,7 +218,22 @@ async function download(path, body, name) {
 }
 
 $('stmt').onclick = () => download('/api/v1/hisaab/statement', { id: state.id, document: state.document }, `hisaab-statement-${state.id}.pdf`)
-$('invpdf').onclick = () => download('/api/v1/hisaab/invoice-pdf', { id: state.id, document: state.document }, `invoice-${state.id}.pdf`)
+$('invpdf').onclick = async () => {
+  try {
+    const sealed = await sealDoc(state.document, state.id, state.result.invoice.docHash, state.key)
+    download('/api/v1/hisaab/invoice-pdf', { id: state.id, sealed }, `invoice-${state.id}-sealed.pdf`)
+  } catch (e) { $('error').textContent = e.message; show('error') }
+}
+$('keyBox').onsubmit = async (e) => {
+  e.preventDefault()
+  try {
+    state.document = await openSealed(state.sealed, $('keyInput').value)
+    state.key = $('keyInput').value.trim()
+    state.sealed = null
+    $('keyInput').value = ''
+    run(state.id)
+  } catch (err) { $('error').textContent = err.message; show('error') }
+}
 $('lookup').onsubmit = (e) => { e.preventDefault(); const id = $('idInput').value.trim(); if (/^\d+$/.test(id)) { history.replaceState(null, '', `/verify/${id}${location.hash}`); run(id) } }
 
 async function usePdf(file) {
@@ -187,6 +243,7 @@ async function usePdf(file) {
   try {
     const r = await api('/api/v1/hisaab/verify', { id: state.id ?? undefined, pdf: btoa(bin) })
     state.document = r.document
+    state.sealed = r.sealedDocument || null
     history.replaceState(null, '', `/verify/${r.id}`)
     state.id = r.id
     $('idInput').value = r.id
@@ -201,6 +258,7 @@ drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); e.data
 
 ;(async () => {
   try { state.document = await decodeFragment(location.hash) } catch {}
+  state.key = new URLSearchParams(location.hash.replace(/^#/, '')).get('k')
   const m = location.pathname.match(/\/verify\/(\d+)/)
   if (m) run(m[1])
 })()
