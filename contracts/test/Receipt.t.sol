@@ -6,6 +6,7 @@ import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {BaseTest} from "./Base.t.sol";
 import {HisaabReceipt} from "../src/HisaabReceipt.sol";
 import {ReceiptSVG} from "../src/ReceiptSVG.sol";
+import {QRCode} from "../src/QRCode.sol";
 import {Invoice, CreateParams} from "../src/interfaces/IHisaabRegistry.sol";
 
 contract ReceiptSVGHarness {
@@ -23,6 +24,14 @@ contract ReceiptSVGHarness {
 
     function sanitize(string memory s) external pure returns (string memory) {
         return ReceiptSVG.sanitize(s);
+    }
+
+    function image(uint256 id, Invoice memory inv, string memory base) external pure returns (string memory) {
+        return ReceiptSVG.svg(id, inv, base);
+    }
+
+    function qr(bytes memory text) external pure returns (bytes memory) {
+        return QRCode.encode(text);
     }
 }
 
@@ -132,5 +141,62 @@ contract ReceiptTest is BaseTest {
         assertEq(svg.formatAmount(500e6), "500.00");
         assertEq(svg.formatAmount(12_500000), "12.50");
         assertEq(svg.formatAmount(1234), "0.001234");
+    }
+
+    function test_QR_StructureForVerifyUrl() public view {
+        bytes memory m = svg.qr(bytes(string.concat(VERIFY_BASE, "1")));
+        assertEq(m.length, 33 * 33);
+        uint8[7] memory finderRow = [1, 0, 1, 1, 1, 0, 1];
+        for (uint256 i; i < 7; ++i) {
+            assertEq(uint8(m[2 * 33 + i]), finderRow[i], "top-left finder row 2");
+            assertEq(uint8(m[i * 33 + 6]), 1, "finder edge column");
+        }
+        assertEq(uint8(m[6 * 33 + 8]), 1, "timing pattern");
+        assertEq(uint8(m[6 * 33 + 9]), 0, "timing pattern");
+        assertEq(uint8(m[25 * 33 + 8]), 1, "dark module");
+        assertEq(uint8(m[26 * 33 + 26]), 1, "alignment centre");
+        assertEq(uint8(m[25 * 33 + 26]), 0, "alignment ring");
+    }
+
+    function test_QR_TooLongUrlFallsBack() public {
+        bytes memory longBase = new bytes(78);
+        for (uint256 i; i < longBase.length; ++i) longBase[i] = "a";
+        assertEq(svg.qr(longBase).length, 33 * 33);
+        assertEq(svg.qr(bytes(string.concat(string(longBase), "1"))).length, 0);
+        string memory img = svg.image(id, registry.getInvoice(id), string(longBase));
+        assertTrue(_has(img, "verify online"));
+        assertFalse(_has(img, "scale(4)"));
+    }
+
+    function test_Card_HasQrStatusAndNoPrivateData() public view {
+        string memory img = svg.image(id, registry.getInvoice(id), VERIFY_BASE);
+        assertTrue(_has(img, "SCAN TO VERIFY"));
+        assertTrue(_has(img, "scale(4)"));
+        assertTrue(_has(img, "#34d399"));
+        assertTrue(_has(img, ISSUER_NAME));
+        assertTrue(_has(img, "500.00"));
+    }
+
+    function test_TokenURI_GasFitsEthCall() public view {
+        uint256 g = gasleft();
+        receipt.tokenURI(id);
+        assertLt(g - gasleft(), 20_000_000);
+    }
+
+    function _has(string memory hay, string memory needle) internal pure returns (bool) {
+        bytes memory h = bytes(hay);
+        bytes memory n = bytes(needle);
+        if (n.length > h.length) return false;
+        for (uint256 i; i + n.length <= h.length; ++i) {
+            bool ok = true;
+            for (uint256 j; j < n.length; ++j) {
+                if (h[i + j] != n[j]) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) return true;
+        }
+        return false;
     }
 }
