@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { ArrowRight, Fuel, ShieldAlert } from "lucide-react";
+import { ArrowRight, FileDown, Fuel, KeyRound, ShieldAlert } from "lucide-react";
+import { toast } from "sonner";
 import { zeroAddress } from "viem";
 import {
   decodeFragment,
+  keyFromFragment,
   docHash,
   explainError,
   isPayable,
@@ -18,6 +20,8 @@ import {
   type PaymentEvent,
 } from "@hisaab/core";
 import { useHisaab } from "@/lib/hisaab";
+import { downloadSealedPdf } from "@/lib/sealed";
+import { saveDoc, saveKey } from "@/lib/store";
 import { dur, ease } from "@/lib/motion";
 import { longDate, middle, same, usdt } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -41,6 +45,7 @@ export function PayView({ id }: { id: string }) {
   const [doc, setDoc] = useState<InvoiceDoc | null>(null);
   const [docErr, setDocErr] = useState<string | null>(null);
   const [hash, setHash] = useState("");
+  const [key, setKey] = useState<string | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [phase, setPhase] = useState<BeamPhase>("idle");
@@ -52,6 +57,7 @@ export function PayView({ id }: { id: string }) {
 
   useEffect(() => {
     setHash(window.location.hash);
+    setKey(keyFromFragment(window.location.hash));
     decodeFragment(window.location.hash).then(
       (d) => (setDoc(d), setDocErr(d ? null : "This link has no invoice document attached (the part after # is missing).")),
       () => setDocErr("The invoice in this link couldn't be read. Ask the issuer to send the link again."),
@@ -96,6 +102,10 @@ export function PayView({ id }: { id: string }) {
 
   const { inv } = data;
   const hashOk = doc ? docHash(doc).toLowerCase() === inv.docHash.toLowerCase() : null;
+  if (hashOk && doc) {
+    saveDoc(inv.docHash, doc);
+    if (key) saveKey(inv.docHash, key);
+  }
   const left = remaining(inv);
   const payable = isPayable(inv) && hashOk === true;
   const allowed = !!me && (same(inv.client, zeroAddress) || same(inv.client, me)) && (same(inv.payer, zeroAddress) || same(inv.payer, me));
@@ -165,7 +175,7 @@ export function PayView({ id }: { id: string }) {
         </div>
         <h1 className="display mt-4">{paidNow ? <><em>Settled.</em></> : <>Pay {issuerShort}</>}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-2 text-ink-2">
-          Issued by <IdentityChip name={inv.issuerName} wallet={inv.issuer} />
+          Issued by <IdentityChip name={(hashOk ? doc?.supplier.ens : undefined) ?? inv.issuerName} wallet={inv.issuer} />
         </div>
       </div>
 
@@ -205,7 +215,7 @@ export function PayView({ id }: { id: string }) {
                 ? "Connect the wallet that should pay this invoice."
                 : !same(inv.payer, zeroAddress) && !same(inv.payer, me)
                   ? "This invoice is locked to the wallet that made the first payment."
-                  : `Only ${inv.clientName || "the client"}'s wallet (${middle(inv.client)}) can pay this invoice.`}
+                  : `Only ${(hashOk ? doc?.customer.ens : undefined) || inv.clientName || "the client"}'s wallet (${middle(inv.client)}) can pay this invoice.`}
             </p>
           )}
           <div className="grid gap-3">
@@ -250,13 +260,27 @@ export function PayView({ id }: { id: string }) {
             {!done.gasless && steps && <TxProgress steps={steps} />}
             {phase === "done" && (
               <p className="text-[15px] text-ok">
-                Receipt <span className="num">#{id}</span> recorded to {inv.issuerName || middle(inv.issuer)}. Anyone can check it on the verify page.
+                Receipt <span className="num">#{id}</span> minted. The verify page shows the payment to anyone, and who it was between only to someone holding the sealed PDF and its key.
               </p>
             )}
           </div>
           {phase === "done" && (
             <>
               <ReceiptCard id={id} image={receipt} slot />
+              {key && doc && (
+                <div className="grid gap-2 rounded-md border border-rule bg-card p-4">
+                  <div className="label">For your accounts</div>
+                  <p className="text-sm text-ink-2">Keep the sealed PDF and the invoice key. Your CA needs both; send them separately.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => downloadSealedPdf(id, doc, key).catch((e) => toast.error(e.message))}>
+                      <FileDown /> Sealed PDF
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(key).then(() => toast("Invoice key copied"))}>
+                      <KeyRound /> Copy key
+                    </Button>
+                  </div>
+                </div>
+              )}
               <Button asChild className="h-12">
                 <Link href={verifyHref}>
                   Open verify page <ArrowRight />
