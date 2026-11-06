@@ -50,7 +50,7 @@ export function network(): Network | null {
       relayerKey: env.RELAYER_PK as Hex | undefined,
     };
   }
-  const file = readJson<Omit<Network, "local">>(env.HISAAB_DEPLOY_FILE || "../HSB_Contract/.deploy.local.json");
+  const file = readJson<Omit<Network, "local">>(env.HISAAB_DEPLOY_FILE || "./HSB_Contract/.deploy.local.json");
   if (!file) return null;
   return { ...file, relayerKey: (env.RELAYER_PK as Hex | undefined) ?? file.relayerKey, local: true };
 }
