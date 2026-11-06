@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Copy, FileDown, RotateCcw, ShieldCheck, Undo2, XCircle } from "lucide-react";
+import { Copy, FileDown, KeyRound, RotateCcw, ShieldCheck, Undo2, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { buildInvoice, docHash, explainError, payLink, toUnits, totalUnits, type OnchainInvoice } from "@hisaab/core";
+import { buildInvoice, docHash, explainError, payLink, randomSalt, toUnits, totalUnits, type OnchainInvoice } from "@hisaab/core";
 import { useHisaab } from "@/lib/hisaab";
-import { downloadPdf } from "@/lib/api";
+import { downloadSealedPdf, keyOf, newKey } from "@/lib/sealed";
 import { loadDoc, markSeen, saveDoc, seenReceipts } from "@/lib/store";
 import { isZero, longDate, middle, usdt } from "@/lib/format";
 import { PageTitle } from "@/components/AppShell";
@@ -59,7 +59,7 @@ export function InvoicesView() {
         list.reverse().map(async (inv) => {
           const doc = loadDoc(inv.docHash);
           const [overdue, next] = await Promise.all([cfg.hisaab.isOverdue(inv.id), cfg.hisaab.supersededBy(inv.id)]);
-          return { inv, overdue, next, link: doc ? await payLink(window.location.origin, inv.id, doc) : null };
+          return { inv, overdue, next, link: doc ? await payLink(window.location.origin, inv.id, doc, keyOf(inv.docHash) ?? undefined) : null };
         }),
       );
       setRows(out);
@@ -109,6 +109,7 @@ export function InvoicesView() {
     const issueDate = new Date().toISOString().slice(0, 10);
     const doc = buildInvoice({
       ...old,
+      salt: randomSalt(),
       invoiceNumber: `${old.invoiceNumber}-R`,
       issueDate,
       dueDate: new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10),
@@ -122,10 +123,11 @@ export function InvoicesView() {
       amount: totalUnits(doc),
       dueDate: BigInt(Math.floor(Date.now() / 1000) + 14 * 86_400),
       docHash: hash,
-      issuerName: inv.issuerName,
-      clientName: inv.clientName,
+      issuerName: old.supplier.ens ?? inv.issuerName,
+      clientName: old.customer.ens ?? inv.clientName,
       supersedes: inv.id,
-    });
+      salt: doc.salt,
+    }).then((r) => newKey(r.id, hash));
     saveDoc(hash, doc);
   }
 
@@ -177,7 +179,7 @@ export function InvoicesView() {
             {rows?.map(({ inv, overdue, next, link }) => {
               const k = inv.id.toString();
               const doc = loadDoc(inv.docHash);
-              const hash = link ? new URL(link).hash : "";
+              const key = keyOf(inv.docHash);
               return (
                 <LedgerRowBody key={k}>
                   <Cell label="Invoice">
@@ -186,7 +188,7 @@ export function InvoicesView() {
                     {next > 0n && <span className="block text-[12px] text-ink-3">replaced by #{next.toString()}</span>}
                   </Cell>
                   <Cell label="Client">
-                    <span className="block truncate font-medium">{inv.clientName || "—"}</span>
+                    <span className="block truncate font-medium">{doc?.customer.ens || inv.clientName || "—"}</span>
                     <span className="num block text-[12px] text-ink-3">{isZero(inv.client) ? "anyone with the link" : middle(inv.client)}</span>
                   </Cell>
                   <Cell label="Amount" right>
@@ -205,12 +207,17 @@ export function InvoicesView() {
                   <Cell className="justify-end md:flex md:justify-end">
                     <div className="flex flex-wrap justify-end">
                       {link && <Act label="Copy pay link" onClick={() => navigator.clipboard.writeText(link).then(() => toast("Pay link copied"))}><Copy /></Act>}
-                      {doc && (
-                        <Act label="Invoice PDF" onClick={() => downloadPdf("/invoice-pdf", { id: k, document: doc }, `invoice-${k}.pdf`).catch((e) => toast.error(e.message))}>
+                      {key && (
+                        <Act label="Copy invoice key" onClick={() => navigator.clipboard.writeText(key).then(() => toast("Invoice key copied"))}>
+                          <KeyRound />
+                        </Act>
+                      )}
+                      {doc && key && (
+                        <Act label="Sealed PDF" onClick={() => downloadSealedPdf(k, doc, key).catch((e) => toast.error(e.message))}>
                           <FileDown />
                         </Act>
                       )}
-                      <Act label="Verify page" href={`/verify/${k}${hash}`}>
+                      <Act label="Verify page" href={`/verify/${k}`}>
                         <ShieldCheck />
                       </Act>
                       {inv.status === "Open" && inv.paid === 0n && (
