@@ -29,6 +29,9 @@ function issuerCheck(inv, ensIssuer) {
   if (!ensIssuer.valid || ensIssuer.status === 'unregistered' || ensIssuer.status === 'available') {
     return row('issuer', 'B · Issuer', 'red', `${name} is not a registered ENS name.`, { name, nodeOk })
   }
+  if (ensIssuer.revoked) {
+    return row('issuer', 'B · Issuer', 'red', `${name} was revoked on ${longDate(ensIssuer.expiry)}. It no longer vouches for this issuer.`, { name, revokedAt: ensIssuer.expiry, nodeOk })
+  }
   const walletOk = same(ensIssuer.wallet, inv.issuer)
   const backlink = ensIssuer.records?.['hisaab.registry']
   const backlinkOk = same(backlink, `${config.wcChainId}:${config.registry}`)
@@ -46,6 +49,11 @@ function issuerCheck(inv, ensIssuer) {
 function standingCheck(inv, ensIssuer) {
   if (!ensIssuer.valid || ensIssuer.status === 'unregistered' || ensIssuer.status === 'available') {
     return row('standing', 'C · Standing', 'red', `${inv.issuerName || 'The issuer name'} is revoked or was never registered.`, { status: ensIssuer.status })
+  }
+  if (ensIssuer.revoked) {
+    const parent = inv.issuerName.split('.').slice(-2).join('.')
+    const before = ensIssuer.expiry > inv.createdAt ? ' This invoice was issued before the revocation.' : ' This invoice was issued after the revocation.'
+    return row('standing', 'C · Standing', 'red', `Revoked by its parent (${parent}) on ${longDate(ensIssuer.expiry)}.${before}`, { status: 'revoked', revokedAt: ensIssuer.expiry, createdAt: inv.createdAt })
   }
   const r = ensIssuer.records || {}
   const employer = r['hisaab.employer']

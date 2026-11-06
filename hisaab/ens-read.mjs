@@ -108,5 +108,6 @@ export async function readName(input, keys = HISAAB_KEYS) {
     records,
     addr,
     wallet: records['hisaab.wallet'] || addr || null,
+    revoked: (status === 'expired' || status === 'available') && resolver === zeroAddress && expiry > 0n,
   }
 }
