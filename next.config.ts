@@ -6,6 +6,7 @@ const api = (process.env.HISAAB_API_URL || "http://127.0.0.1:3000").replace(/\/$
 
 const config: NextConfig = {
   reactStrictMode: true,
+  devIndicators: false,
   turbopack: {
     root: path.resolve(process.cwd(), ".."),
     resolveAlias: {
