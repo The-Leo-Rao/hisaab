@@ -20,6 +20,7 @@ export type Config = {
   local: boolean;
   relayer: Address | null;
   identities: Identity[];
+  controllers: Record<string, Address>;
   chain: Chain;
   client: PublicClient;
   sepoliaClient: PublicClient;
@@ -44,7 +45,7 @@ type RawConfig = {
   verifyBase: string;
   local: boolean;
   relayer: Address | null;
-  demo: { names: Record<string, string>; wallets: Record<string, Address> } | null;
+  demo: { names: Record<string, string>; wallets: Record<string, Address>; controllers: Record<string, Address> } | null;
 };
 
 function build(raw: RawConfig): Config {
@@ -63,6 +64,7 @@ function build(raw: RawConfig): Config {
     ...raw,
     deployBlock,
     identities,
+    controllers: raw.demo?.controllers ?? {},
     chain: whitechain,
     client,
     sepoliaClient,

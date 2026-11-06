@@ -18,6 +18,7 @@ export type Network = {
 export type DemoNames = {
   names: Record<string, string>;
   wallets: Record<string, Address>;
+  controllers: Record<string, Address>;
 };
 
 const OFFICIAL_USDT = "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7";
@@ -62,6 +63,7 @@ export function demoNames(): DemoNames | null {
   const demo = readJson<{
     names: { company: string; freelancer: string; engagement: string; contractors: string[] };
     whitechainWallets: Record<string, Address>;
+    ensControllers: Record<string, Address>;
   }>(process.env.HISAAB_ENS_DEMO_FILE || "../HSB_ENSv2/.ens-demo.json");
   if (!demo) return null;
   const names: Record<string, string> = {
@@ -72,5 +74,5 @@ export function demoNames(): DemoNames | null {
     const who = c.split(".")[0];
     if (who !== "ravi") names[who] = c;
   }
-  return { names, wallets: demo.whitechainWallets };
+  return { names, wallets: demo.whitechainWallets, controllers: demo.ensControllers ?? {} };
 }
