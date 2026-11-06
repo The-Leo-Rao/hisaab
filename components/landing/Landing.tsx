@@ -64,11 +64,11 @@ function MiniSheet({ inv }: { inv: OnchainInvoice | null | undefined }) {
         <div className="mt-6 grid grid-cols-2 gap-4 border-t border-rule pt-4 text-sm">
           <div>
             <div className="label">From</div>
-            <div className="num truncate">{inv.issuerName}</div>
+            <div className="num truncate">{inv.issuerName || "Sealed"}</div>
           </div>
           <div>
             <div className="label">To</div>
-            <div className="num truncate">{inv.clientName || middle(inv.client)}</div>
+            <div className="num truncate">{inv.clientName || (inv.issuerName ? middle(inv.client) : "Sealed")}</div>
           </div>
         </div>
         <div className="mt-6 flex items-baseline justify-between border-t border-rule pt-4">
@@ -90,9 +90,9 @@ function MiniSheet({ inv }: { inv: OnchainInvoice | null | undefined }) {
 }
 
 const STEPS = [
-  { Icon: Fingerprint, title: "Issue", text: "A fingerprint of the invoice goes onchain. The document itself stays with you and your client, inside the link or the PDF." },
+  { Icon: Fingerprint, title: "Issue", text: "A fingerprint of the invoice goes onchain, with no names. The document is sealed with a key that only you hand out." },
   { Icon: Send, title: "Get paid", text: "Your client pays in USDT without gas. The money goes straight to your wallet in one transaction. Hisaab never holds it." },
-  { Icon: FileCheck2, title: "Prove it", text: "A soulbound receipt, a QR code and a statement PDF let a CA or bank check every payment themselves." },
+  { Icon: FileCheck2, title: "Prove it", text: "Give your CA the sealed PDF and its key. Anyone else who finds your wallet sees amounts, not who you work for." },
 ];
 
 function HowItWorks() {
@@ -313,9 +313,9 @@ export function Landing() {
             <ul className="mt-8 grid max-w-xl gap-0 border-t border-rule">
               {[
                 ["A · Document", "The invoice matches the fingerprint recorded onchain."],
-                ["B · Issuer", "The ENS name points to the wallet that issued it."],
+                ["B · Issuer", "The ENS name's sealed wallet record matches the wallet that issued it."],
                 ["C · Standing", "The name was active, and vouched for by the company where relevant."],
-                ["D · Payment", "The full amount arrived, and the receipt sits with the issuer."],
+                ["D · Payment", "The full amount arrived, and the receipt was minted."],
                 ["Client", "The payer is the client named on the invoice."],
               ].map(([k, v]) => (
                 <li key={k} className="grid grid-cols-[130px_1fr] gap-4 border-b border-rule py-3">
@@ -324,7 +324,7 @@ export function Landing() {
                 </li>
               ))}
             </ul>
-            <p className="mt-4 text-sm text-ink-3">No wallet needed. The statement PDF carries the invoice inside it, so dropping it back re-runs every check.</p>
+            <p className="mt-4 text-sm text-ink-3">No wallet needed. Without the key the page shows public facts only. Drop the sealed PDF, type the key, and every check runs in full.</p>
           </div>
           <PhoneShot />
         </div>
