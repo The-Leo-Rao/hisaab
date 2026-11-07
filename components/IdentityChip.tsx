@@ -28,7 +28,7 @@ export function ensState(e: EnsName | null, wallet?: string | null): State {
   if (!e) return "idle";
   if (e.revoked || e.status === "unregistered" || e.status === "available" || !e.valid) return "bad";
   if (e.status === "expired") return "warn";
-  if (wallet && e.wallet && !same(e.wallet, wallet)) return "bad";
+  if (wallet && e.wallet && /^0x[0-9a-fA-F]{40}$/.test(e.wallet) && !same(e.wallet, wallet)) return "bad";
   return e.status === "registered" ? "ok" : "idle";
 }
 
