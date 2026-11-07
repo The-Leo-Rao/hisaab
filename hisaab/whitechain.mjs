@@ -16,6 +16,20 @@ export const whitechain = defineChain({
 
 export const wc = createPublicClient({ chain: whitechain, transport: http(config.wcRpc) })
 
+const LOG_RANGE = BigInt(process.env.WC_LOG_RANGE || 9999)
+
+async function events(eventName, args) {
+  const latest = await wc.getBlockNumber()
+  const spans = []
+  for (let s = config.deployBlock; s <= latest; s += LOG_RANGE + 1n) spans.push([s, s + LOG_RANGE < latest ? s + LOG_RANGE : latest])
+  const out = []
+  for (let i = 0; i < spans.length; i += 4) {
+    const part = await Promise.all(spans.slice(i, i + 4).map(([fromBlock, toBlock]) => wc.getContractEvents({ address: config.registry, abi: registryAbi, eventName, args, fromBlock, toBlock })))
+    for (const p of part) out.push(...p)
+  }
+  return out
+}
+
 export function explorerTx(hash) {
   return `${config.explorer}/tx/${hash}`
 }
@@ -28,14 +42,7 @@ export async function getInvoice(id) {
 }
 
 export async function payments(id) {
-  const logs = await wc.getContractEvents({
-    address: config.registry,
-    abi: registryAbi,
-    eventName: 'Paid',
-    args: { id: BigInt(id) },
-    fromBlock: config.deployBlock,
-    toBlock: 'latest',
-  })
+  const logs = await events('Paid', { id: BigInt(id) })
   return logs.map((l) => ({
     payer: l.args.payer,
     amount: l.args.amount,
@@ -48,14 +55,7 @@ export async function payments(id) {
 }
 
 export async function refunds(id) {
-  const logs = await wc.getContractEvents({
-    address: config.registry,
-    abi: registryAbi,
-    eventName: 'Refunded',
-    args: { id: BigInt(id) },
-    fromBlock: config.deployBlock,
-    toBlock: 'latest',
-  })
+  const logs = await events('Refunded', { id: BigInt(id) })
   return logs.map((l) => ({ to: l.args.to, amount: l.args.amount, txHash: l.transactionHash, explorer: explorerTx(l.transactionHash) }))
 }
 
