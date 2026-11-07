@@ -18,6 +18,9 @@ Built at ETHGlobal Mumbai for the Whitechain **Operate** and **Scale** tracks, p
 | Gasless relayer | [`0x6d8D215E7afA60EcAD65AD254198c7e314EfF547`](https://explorer.testnet.whitechain.io/address/0x6d8D215E7afA60EcAD65AD254198c7e314EfF547) |
 
 Deploy block `12409344`. First invoice: [`0xdd89…fc33`](https://explorer.testnet.whitechain.io/tx/0xdd89028912d7b8ee05773397e81b19db657a07fdf48f24aab999b93c0f31fc33).
+**First payment in the official test USDT, gasless through our relayer:**
+[`0x1301…610e`](https://explorer.testnet.whitechain.io/tx/0x13016cac95c18b53a62651e727c97f8a5bcb1520fc0b1c5e6cf3d54917a8610e)
+(the client signed once, the relayer paid the gas, and 1 USDT went client → freelancer in the same tx that marked invoice #1 paid).
 
 ## Why Whitechain and onchain stablecoins
 
