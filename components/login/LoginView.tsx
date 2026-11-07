@@ -3,16 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Building2, ReceiptText, ShieldCheck } from "lucide-react";
-import { formatUnits, type Address } from "viem";
-import { useSwitchChain } from "wagmi";
 import { useHisaab } from "@/lib/hisaab";
-import { useProfile, type Profile, type Role } from "@/lib/profile";
-import { api, ensRegister } from "@/lib/api";
-import { useTxRunner } from "@/lib/ens-tx";
-import { isTopLevel, registrationSteps, YEAR } from "@/lib/ens-register";
-import { sepolia } from "@/lib/wagmi";
+import { useProfile, type Role } from "@/lib/profile";
 import { middle } from "@/lib/format";
-import { TxProgress } from "@/components/TxProgress";
 import { cn } from "@/lib/utils";
 import { Brand } from "@/components/Brand";
 import { IdentitySwitch } from "@/components/AppShell";
@@ -58,49 +51,11 @@ export function LoginView() {
   }, [loggedIn, next, params, router]);
 
   const valid = !!me && ens.trim().endsWith(".eth") && name.trim().length > 0;
-  const runner = useTxRunner();
-  const { switchChainAsync } = useSwitchChain();
-  const [check, setCheck] = useState<{ state: "idle" | "checking" | "register" | "error"; msg?: string; fee?: bigint; token?: Address }>({ state: "idle" });
-
-  useEffect(() => setCheck({ state: "idle" }), [ens]);
-
-  async function gate(p: Profile) {
-    setCheck({ state: "checking" });
-    try {
-      const info = await api.ensName(p.ens);
-      if (info.valid && info.status === "registered" && !info.revoked) {
-        setCheck({ state: "idle" });
-        signIn(p);
-        router.push(next);
-        return;
-      }
-      if (info.revoked) return setCheck({ state: "error", msg: `${p.ens} was revoked on ENS. Ask whoever issued it to restore it.` });
-      if (info.status === "expired") return setCheck({ state: "error", msg: `${p.ens} has expired on ENS. Renew it to log in.` });
-      if (isTopLevel(p.ens) && me) {
-        const q = await ensRegister.quote(p.ens, me, YEAR);
-        if (!q.available) return setCheck({ state: "error", msg: `${p.ens} is taken by someone else.` });
-        return setCheck({ state: "register", fee: BigInt(q.total), token: q.paymentToken as Address });
-      }
-      setCheck({ state: "error", msg: `${p.ens} doesn't exist on ENS yet. Register a name.eth here, or ask your company to issue this subname.` });
-    } catch (e) {
-      setCheck({ state: "error", msg: e instanceof Error ? e.message : String(e) });
-    }
-  }
-
   const enter = () => {
     if (!valid) return;
-    gate({ role, ens: ens.trim().toLowerCase(), name: name.trim() });
+    signIn({ role, ens: ens.trim().toLowerCase(), name: name.trim() });
+    router.push(next);
   };
-
-  async function register() {
-    if (!me || !cfg || check.fee === undefined || !check.token) return;
-    const p: Profile = { role, ens: ens.trim().toLowerCase(), name: name.trim() };
-    if (!cfg.local) await switchChainAsync({ chainId: sepolia.id }).catch(() => {});
-    runner.runSteps(registrationSteps(cfg.sepoliaClient, p.ens, me, check.fee, check.token), () => {
-      signIn(p);
-      router.push(next);
-    });
-  }
 
   return (
     <div className="grid-bg relative min-h-[calc(100dvh-64px)] overflow-hidden">
@@ -130,15 +85,13 @@ export function LoginView() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-3">
-                <button onClick={() => gate(profile)} disabled={check.state === "checking"} className="flex h-11 items-center gap-2 bg-accent px-5 font-semibold text-accent-ink hover:bg-accent-2">
+                <button onClick={() => (signIn(profile), router.push(next))} className="flex h-11 items-center gap-2 bg-accent px-5 font-semibold text-accent-ink hover:bg-accent-2">
                   Continue as {profile.role === "corporate" ? "corporation" : "freelancer"} <ArrowRight className="size-4" />
                 </button>
                 <button onClick={() => setEditing(true)} className="h-11 border border-rule-strong px-5 text-sm text-ink-2 hover:text-ink">
                   Change account
                 </button>
               </div>
-              {check.state === "checking" && <p className="text-sm text-ink-3">Checking {profile.ens} on ENS…</p>}
-              {check.state === "error" && <p className="text-sm text-bad">{check.msg}</p>}
             </div>
           ) : (
             <form
@@ -177,20 +130,6 @@ export function LoginView() {
                 {profile ? "Save and continue" : role === "corporate" ? "Sign up as a corporation" : "Sign up as a freelancer"} <ArrowRight className="size-4" />
               </button>
               {!me && <p className="text-sm text-warn">Connect a wallet first.</p>}
-              {check.state === "checking" && <p className="text-sm text-ink-3">Checking {ens} on ENS…</p>}
-              {check.state === "error" && <p className="text-sm text-bad">{check.msg}</p>}
-              {check.state === "register" && (
-                <div className="grid gap-3 border border-accent/50 bg-accent/[0.06] p-4">
-                  <p className="text-[15px]">
-                    <span className="num">{ens}</span> is free. Register it on ENSv2 (Sepolia) for one year to sign up. Fee:{" "}
-                    <span className="num">{formatUnits(check.fee ?? 0n, 6)}</span> MockUSDC (test token, minted for you if needed) plus Sepolia gas, all from {middle(me)}.
-                  </p>
-                  <button type="button" onClick={register} disabled={runner.busy} className="flex h-11 items-center justify-center gap-2 bg-accent px-5 font-semibold text-accent-ink hover:bg-accent-2 disabled:opacity-40">
-                    Register {ens} and sign up
-                  </button>
-                  {(runner.steps || runner.error) && <TxProgress steps={runner.steps ?? []} error={runner.error} urlFor={cfg?.local ? () => undefined : (h) => `https://sepolia.etherscan.io/tx/${h}`} />}
-                </div>
-              )}
             </form>
           )}
         </section>
