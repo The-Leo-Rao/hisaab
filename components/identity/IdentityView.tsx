@@ -2,96 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { isAddress, type Hex } from "viem";
-import { useSwitchChain, useWalletClient } from "wagmi";
+import { isAddress } from "viem";
 import { approvalCommitment, decodeFragment, explainError, parseLink, walletCommitment } from "@hisaab/core";
 import { useHisaab } from "@/lib/hisaab";
 import { nameSaltFor } from "@/lib/sealed";
 import { loadDoc } from "@/lib/store";
-import { api, type EnsName, type UnsignedTx } from "@/lib/api";
-import { sepolia } from "@/lib/wagmi";
-import { longDate, middle, same } from "@/lib/format";
+import { api, type EnsName } from "@/lib/api";
+import { useTxRunner } from "@/lib/ens-tx";
+import { longDate, same } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { PageTitle } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Hash } from "@/components/Hash";
 import { ensState } from "@/components/IdentityChip";
-import { TxProgress, type Step } from "@/components/TxProgress";
+import { TxProgress } from "@/components/TxProgress";
 import { toneFill, toneText } from "@/components/tone";
 
 const KEYS = ["hisaab.registry", "hisaab.wallet", "hisaab.employer", "hisaab.role", "hisaab.client", "hisaab.approved"];
 const SUGGEST = ["acme-labs.eth", "priya.dev.acme-labs.eth", "arjun.dev.acme-labs.eth", "ravi-dev.eth", "acme-q4.ravi-dev.eth"];
-
-function useSender() {
-  const { cfg } = useHisaab();
-  const { data: wallet } = useWalletClient({ chainId: sepolia.id });
-  const { switchChainAsync } = useSwitchChain();
-  return async (tx: UnsignedTx): Promise<Hex> => {
-    if (!cfg) throw new Error("Not connected.");
-    const c = cfg.sepoliaClient;
-    if (cfg.local) {
-      await c.request({ method: "anvil_impersonateAccount" as never, params: [tx.from] as never });
-      try {
-        const hash = (await c.request({ method: "eth_sendTransaction" as never, params: [{ from: tx.from, to: tx.to, data: tx.data, value: tx.value }] as never })) as Hex;
-        const r = await c.waitForTransactionReceipt({ hash });
-        if (r.status !== "success") throw new Error("The ENS transaction reverted.");
-        return hash;
-      } finally {
-        await c.request({ method: "anvil_stopImpersonatingAccount" as never, params: [tx.from] as never }).catch(() => {});
-      }
-    }
-    if (!wallet) {
-      await switchChainAsync({ chainId: sepolia.id });
-      throw new Error("Switched your wallet to Sepolia. Press the button again.");
-    }
-    if (!same(wallet.account.address, tx.from)) throw new Error(`Connect ${middle(tx.from)}; it controls this name.`);
-    const hash = await wallet.sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value || "0"), account: wallet.account, chain: sepolia });
-    const r = await c.waitForTransactionReceipt({ hash });
-    if (r.status !== "success") throw new Error("The ENS transaction reverted.");
-    return hash;
-  };
-}
-
-function useRunner() {
-  const send = useSender();
-  const [steps, setSteps] = useState<Step[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  async function run(build: () => Promise<{ label: string; tx: UnsignedTx }[]>, after?: () => void) {
-    setBusy(true);
-    setError(null);
-    let list: { label: string; tx: UnsignedTx }[] = [];
-    try {
-      list = await build();
-    } catch (e) {
-      setSteps(null);
-      setError(explainError(e));
-      setBusy(false);
-      return;
-    }
-    const s: Step[] = list.map((x) => ({ label: x.label, state: "todo" }));
-    setSteps([...s]);
-    for (const [i, x] of list.entries()) {
-      s[i] = { ...s[i], state: "active" };
-      setSteps([...s]);
-      try {
-        const hash = await send(x.tx);
-        s[i] = { ...s[i], state: "done", hash };
-        setSteps([...s]);
-      } catch (e) {
-        s[i] = { ...s[i], state: "error" };
-        setSteps([...s]);
-        setError(explainError(e));
-        setBusy(false);
-        return;
-      }
-    }
-    setBusy(false);
-    after?.();
-  }
-  return { run, steps, error, busy, fail: setError };
-}
 
 export function IdentityView() {
   const { cfg, identity } = useHisaab();
@@ -194,7 +123,7 @@ function RecordsForm({ name, defaultController, defaultIssuer, onDone }: { name:
   const [employer, setEmployer] = useState(name.split(".").slice(-2).join("."));
   const [role, setRole] = useState("");
   const [client, setClient] = useState("");
-  const r = useRunner();
+  const r = useTxRunner();
 
   useEffect(() => setFrom(defaultController), [defaultController]);
   useEffect(() => setKind(contractorish ? "contractor" : "freelance"), [contractorish]);
@@ -279,7 +208,7 @@ function AckForm({ name, controller, client, onDone }: { name: string; controlle
   const { cfg } = useHisaab();
   const [ref, setRef] = useState("");
   const [clientWallet, setClientWallet] = useState(client);
-  const r = useRunner();
+  const r = useTxRunner();
   useEffect(() => setClientWallet(client), [client]);
   return (
     <div className="grid gap-4 rounded-md border border-rule bg-card p-5">
