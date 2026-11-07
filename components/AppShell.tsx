@@ -77,7 +77,7 @@ export function IdentitySwitch() {
 function NetworkChip() {
   const { cfg } = useHisaab();
   return (
-    <span className="num rounded-sm border border-rule-strong px-1.5 py-0.5 text-[10px] tracking-[0.1em] text-ink-3">
+    <span className="num rounded-sm border border-rule-strong px-1.5 py-0.5 text-[10px] tracking-[0.1em] whitespace-nowrap text-ink-3">
       WHITECHAIN · {cfg?.chainId ?? 1874}
       {cfg?.local ? " · FORK" : ""}
     </span>
@@ -196,6 +196,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       {error}
     </div>
   );
+
+  if (!ready && !PUBLIC.includes(path) && !OPEN_WITHOUT_LOGIN(path)) return <div className="min-h-dvh" />;
 
   if (PUBLIC.includes(path) || !loggedIn) {
     const bare = PUBLIC.includes(path);

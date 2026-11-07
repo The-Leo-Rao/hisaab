@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useAccount } from "wagmi";
 import { useHisaab } from "@/lib/hisaab";
 
 export type Role = "corporate" | "freelancer";
@@ -28,7 +29,9 @@ function write(key: string, v: unknown) {
 }
 
 export function useProfile() {
-  const { me } = useHisaab();
+  const { me, cfg, choice } = useHisaab();
+  const { status } = useAccount();
+  const settling = !cfg || (choice === "wallet" && (status === "reconnecting" || status === "connecting"));
   const [state, setState] = useState<{ profile: Profile | null; session: boolean; ready: boolean }>({ profile: null, session: false, ready: false });
 
   const load = useCallback(() => {
@@ -59,5 +62,5 @@ export function useProfile() {
 
   const signOut = useCallback(() => write(SESSION, null), []);
 
-  return { ...state, loggedIn: !!state.profile && state.session, signIn, signOut, me };
+  return { ...state, ready: state.ready && !settling, loggedIn: !!state.profile && state.session, signIn, signOut, me };
 }
