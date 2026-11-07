@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { dur, spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
-const INK = { paid: "#0e7a6d", verified: "#1d2f5e", void: "#b3261e" } as const;
+const INK = { paid: "#46d99b", verified: "#f5b62a", void: "#ff6b6b" } as const;
 const WORD = { paid: "PAID", verified: "VERIFIED", void: "VOID" } as const;
 
 let flip = 1;
@@ -71,7 +71,7 @@ export function Stamp({
           textAnchor="middle"
           fill={ink}
           stroke="none"
-          style={{ font: "700 30px var(--font-geist), sans-serif", letterSpacing: "0.18em" }}
+          style={{ font: "700 28px var(--font-lemon), sans-serif", letterSpacing: "0.18em" }}
         >
           {text}
         </text>

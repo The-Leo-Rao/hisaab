@@ -154,7 +154,7 @@ export function PayablesView() {
   return (
     <div className="pb-24">
       <PageTitle
-        title={<>Company <em>payables</em></>}
+        title={<>Pay<em>roll</em></>}
         sub="Every invoice that names this wallet as the client. Nobody else can bill you through this list."
         right={
           <Sheet>
