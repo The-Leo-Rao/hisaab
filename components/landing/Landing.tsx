@@ -11,11 +11,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { GaslessBeam, type BeamPhase } from "@/components/GaslessBeam";
 import { Hash } from "@/components/Hash";
 import { useEnsName } from "@/components/IdentityChip";
+import { Brand } from "@/components/Brand";
 import { Hero } from "./Hero";
 
 const STEPS = [
   { Icon: Fingerprint, title: "Issue", text: "A fingerprint of the invoice goes onchain, with no names. The document is sealed with a key that only you hand out." },
-  { Icon: Send, title: "Get paid", text: "Your client pays in USDT without gas. The money goes straight to your wallet in one transaction. Hisaab never holds it." },
+  { Icon: Send, title: "Get paid", text: "Your client pays in USDT without gas. The money goes straight to your wallet in one transaction. हिsaab never holds it." },
   { Icon: FileCheck2, title: "Prove it", text: "Give your CA the sealed PDF and its key. Anyone else who finds your wallet sees amounts, not who you work for." },
 ];
 
@@ -146,7 +147,7 @@ function PhoneShot() {
   return (
     <div className="mx-auto w-[260px] rounded-[36px] border border-ink/70 bg-ink p-2.5 shadow-[0_24px_60px_-30px_rgb(20_33_61/0.6)]">
       <div className="overflow-hidden rounded-[28px] bg-paper">
-        <img src="/verify-phone.png" alt="The Hisaab verify page on a phone: Verified, with every check passing" className="block w-full" loading="lazy" />
+        <img src="/verify-phone.png" alt="The हिsaab verify page on a phone: Verified, with every check passing" className="block w-full" loading="lazy" />
       </div>
     </div>
   );
@@ -167,7 +168,7 @@ export function Landing() {
           <h2 className="display max-w-2xl">
             Names that <em>vouch</em> for the person billing you.
           </h2>
-          <p className="mt-4 max-w-2xl text-ink-2">Every invoice names an ENS identity. Hover a name to read its live Hisaab records on ENSv2.</p>
+          <p className="mt-4 max-w-2xl text-ink-2">Every invoice names an ENS identity. Hover a name to read its live हिsaab records on ENSv2.</p>
           <div className="mt-10 grid gap-12 md:grid-cols-2">
             <Tree
               title="A company vouches for its contractors"
@@ -218,7 +219,7 @@ export function Landing() {
 
         <footer className="grid gap-6 border-t border-rule pt-10 text-sm text-ink-2 md:grid-cols-3">
           <div>
-            <div className="font-display text-2xl text-ink">Hisaab</div>
+            <Brand className="text-2xl" />
             <p className="mt-2">Built at ETHGlobal Mumbai 2026.</p>
           </div>
           <div className="grid gap-2">
