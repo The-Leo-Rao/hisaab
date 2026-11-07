@@ -228,7 +228,7 @@ export function PayView({ id }: { id: string }) {
             </Button>
           </div>
           <p className="text-sm text-ink-3">
-            USDT goes straight to the issuer. Hisaab never holds funds. No gas: you sign once, our relayer submits it.
+            USDT goes straight to the issuer. हिsaab never holds funds. No gas: you sign once, our relayer submits it.
           </p>
           {error && !steps && (
             <p className="rounded-sm border border-bad/40 bg-bad-fill/10 p-3 text-[15px] text-bad" role="alert">

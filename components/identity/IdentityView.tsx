@@ -54,7 +54,7 @@ export function IdentityView() {
 
   return (
     <div className="mx-auto max-w-[720px]">
-      <PageTitle title={<>Identity on <em>ENS</em></>} sub="Look up a name, read its Hisaab records, and set them. Records live on ENSv2, Ethereum Sepolia." />
+      <PageTitle title={<>Identity on <em>ENS</em></>} sub="Look up a name, read its हिsaab records, and set them. Records live on ENSv2, Ethereum Sepolia." />
       <form
         className="flex gap-3"
         onSubmit={(e) => {
@@ -142,7 +142,7 @@ function RecordsForm({ name, defaultController, defaultIssuer, onDone }: { name:
       }}
     >
       <div>
-        <h3 className="title">Set Hisaab records</h3>
+        <h3 className="title">Set हिsaab records</h3>
         <p className="mt-1 text-sm text-ink-2">Links this name to the wallet that issues invoices without publishing that wallet: ENS only stores a sealed value that a verifier can check once they hold an invoice and its key.</p>
       </div>
       <div className="flex gap-2">
