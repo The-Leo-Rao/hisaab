@@ -8,6 +8,7 @@ import { isAddress, type Address } from "viem";
 import { toast } from "sonner";
 import { buildInvoice, docHash, explainError, formatMoney, lineAmount, payLink, randomSalt, totalUnits, type InvoiceDoc } from "@hisaab/core";
 import { useHisaab } from "@/lib/hisaab";
+import { useProfile } from "@/lib/profile";
 import { downloadSealedPdf, nameSaltFor, newKey } from "@/lib/sealed";
 import { loadNameSalt, saveDoc, saveTemplate, loadTemplate } from "@/lib/store";
 import { group, same } from "@/lib/format";
@@ -133,6 +134,7 @@ function Printed({ children }: { children: React.ReactNode }) {
 
 export function CreateView() {
   const ctx = useHisaab();
+  const { profile } = useProfile();
   const { cfg, signer, me, identity, refresh } = ctx;
   const [mode, setMode] = useState<Mode>("freelance");
   const [f, setF] = useState<Form>(() => defaults("freelance", ctx));
@@ -147,11 +149,16 @@ export function CreateView() {
   }, [identity?.key, identity?.persona]);
 
   useEffect(() => {
-    setF(defaults(mode, ctx));
+    const d = defaults(mode, ctx);
+    if (profile?.role === "freelancer") {
+      if (!d.issuerName) d.issuerName = profile.ens;
+      if (!d.supplierName) d.supplierName = profile.name;
+    }
+    setF(d);
     setCreated(null);
     setSteps(null);
     setError(null);
-  }, [mode, identity?.key, cfg]);
+  }, [mode, identity?.key, cfg, profile?.ens, profile?.name, profile?.role]);
 
   const last = me ? loadTemplate<Form>(me, mode) : null;
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -265,7 +272,7 @@ export function CreateView() {
               </Button>
             </div>
             <p className="mt-2 text-sm text-ink-3">
-              Onchain, this invoice shows an amount and a status, nothing about who it is between. To prove it to a CA or a bank, send the sealed PDF and this key separately. Either one alone reveals nothing. Hisaab doesn&apos;t keep a copy.
+              Onchain, this invoice shows an amount and a status, nothing about who it is between. To prove it to a CA or a bank, send the sealed PDF and this key separately. Either one alone reveals nothing. हिsaab doesn&apos;t keep a copy.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
