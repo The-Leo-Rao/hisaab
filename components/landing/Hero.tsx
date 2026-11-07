@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { ArrowRight } from "lucide-react";
-import { registryAbi } from "@hisaab/core";
 import { useHisaab } from "@/lib/hisaab";
 import { dur, ease } from "@/lib/motion";
 import { toNumber } from "@/lib/format";
@@ -24,14 +23,14 @@ function useRegistryStats() {
       const ids = Array.from({ length: Math.min(Number(next - 1n), 200) }, (_, i) => next - 1n - BigInt(i));
       const [list, paid] = await Promise.all([
         cfg.hisaab.many(ids),
-        cfg.client.getContractEvents({ address: cfg.registry, abi: registryAbi, eventName: "Paid", fromBlock: cfg.deployBlock, toBlock: "latest" }),
+        cfg.hisaab.payments(),
       ]);
       if (!live) return;
       setStats({
         invoices: Number(next - 1n),
         settled: list.reduce((s, i) => s + i.paid - i.refunded, 0n),
         receipts: list.filter((i) => i.status === "Paid").length,
-        gasless: paid.filter((l) => l.args.gasless).length,
+        gasless: paid.filter((p) => p.gasless).length,
       });
     })().catch(() => live && setStats(null));
     return () => {

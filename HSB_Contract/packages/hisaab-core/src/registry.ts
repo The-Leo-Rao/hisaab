@@ -80,6 +80,20 @@ export function isPayable(inv: OnchainInvoice): boolean {
   return inv.refunded === 0n && (inv.status === "Open" || inv.status === "PartiallyPaid");
 }
 
+export const LOG_RANGE = 9_999n;
+
+export async function inRanges<T>(client: PublicClient, from: bigint, fetch: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>, range = LOG_RANGE): Promise<T[]> {
+  const latest = await client.getBlockNumber();
+  const spans: [bigint, bigint][] = [];
+  for (let s = from; s <= latest; s += range + 1n) spans.push([s, s + range < latest ? s + range : latest]);
+  const out: T[] = [];
+  for (let i = 0; i < spans.length; i += 4) {
+    const part = await Promise.all(spans.slice(i, i + 4).map(([a, b]) => fetch(a, b)));
+    for (const p of part) out.push(...p);
+  }
+  return out;
+}
+
 export function createHisaab(client: PublicClient, addrs: HisaabAddresses) {
   const reg = { address: addrs.registry, abi: registryAbi } as const;
 
@@ -107,13 +121,9 @@ export function createHisaab(client: PublicClient, addrs: HisaabAddresses) {
   }
 
   async function createdIds(filter: { issuer?: Address; client?: Address }): Promise<bigint[]> {
-    const logs = await client.getContractEvents({
-      ...reg,
-      eventName: "InvoiceCreated",
-      args: filter,
-      fromBlock: addrs.deployBlock,
-      toBlock: "latest",
-    });
+    const logs = await inRanges(client, addrs.deployBlock, (fromBlock, toBlock) =>
+      client.getContractEvents({ ...reg, eventName: "InvoiceCreated", args: filter, fromBlock, toBlock }),
+    );
     return [...new Set(logs.map((l) => l.args.id!))];
   }
 
@@ -122,15 +132,12 @@ export function createHisaab(client: PublicClient, addrs: HisaabAddresses) {
     return all.filter((x): x is OnchainInvoice => x !== null);
   }
 
-  async function payments(id: bigint): Promise<PaymentEvent[]> {
-    const logs = await client.getContractEvents({
-      ...reg,
-      eventName: "Paid",
-      args: { id },
-      fromBlock: addrs.deployBlock,
-      toBlock: "latest",
-    });
+  async function payments(id?: bigint): Promise<(PaymentEvent & { id: bigint })[]> {
+    const logs = await inRanges(client, addrs.deployBlock, (fromBlock, toBlock) =>
+      client.getContractEvents({ ...reg, eventName: "Paid", args: id === undefined ? {} : { id }, fromBlock, toBlock }),
+    );
     return logs.map((l) => ({
+      id: l.args.id!,
       payer: l.args.payer!,
       amount: l.args.amount!,
       totalPaid: l.args.totalPaid!,
