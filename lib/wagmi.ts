@@ -13,7 +13,7 @@ export const whitechain = { ...whitechainSepolia, rpcUrls: { default: { http: [W
 export const sepolia = { ...sepoliaBase, rpcUrls: { default: { http: [SEPOLIA_RPC] } } };
 
 const connectors = connectorsForWallets([{ groupName: "Browser wallet", wallets: [injectedWallet] }], {
-  appName: "Hisaab",
+  appName: "हिsaab",
   projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID || "hisaab-local",
 });
 

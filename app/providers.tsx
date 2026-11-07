@@ -18,7 +18,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={theme} appInfo={{ appName: "Hisaab" }}>
+        <RainbowKitProvider theme={theme} appInfo={{ appName: "हिsaab" }}>
           <MotionConfig reducedMotion="user">
             <TooltipProvider delayDuration={200}>
               <HisaabProvider>{children}</HisaabProvider>

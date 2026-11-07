@@ -7,7 +7,7 @@ export function GET() {
   const n = network();
   if (!n) {
     return Response.json(
-      { error: "No Hisaab deployment found. Start the local stack (start-demo.ps1) or set HISAAB_NETWORK=whitechain and the contract addresses." },
+      { error: "No हिsaab deployment found. Start the local stack (start-demo.ps1) or set HISAAB_NETWORK=whitechain and the contract addresses." },
       { status: 503 },
     );
   }
