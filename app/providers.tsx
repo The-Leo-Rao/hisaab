@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { MotionConfig } from "motion/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
+import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import { WagmiProvider } from "wagmi";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,7 +11,7 @@ import { HisaabProvider } from "@/lib/hisaab";
 import { wagmiConfig } from "@/lib/wagmi";
 import "@rainbow-me/rainbowkit/styles.css";
 
-const theme = lightTheme({ accentColor: "#14213d", accentColorForeground: "#f6f1e6", borderRadius: "small", fontStack: "system" });
+const theme = darkTheme({ accentColor: "#f5b62a", accentColorForeground: "#0b0b0c", borderRadius: "none", fontStack: "system" });
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -25,7 +25,7 @@ export function Providers({ children }: { children: ReactNode }) {
               <Toaster
                 position="bottom-center"
                 toastOptions={{
-                  style: { background: "#14213d", color: "#f6f1e6", border: "none", borderRadius: 4, fontFamily: "var(--font-geist)" },
+                  style: { background: "#111318", color: "#f1f0ec", border: "1px solid rgb(255 255 255 / 0.12)", borderRadius: 2, fontFamily: "var(--font-poppins)" },
                 }}
               />
             </TooltipProvider>

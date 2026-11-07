@@ -11,7 +11,7 @@ const SheetTrigger = SheetPrimitive.Trigger;
 function SheetContent({ className, children, ...props }: React.ComponentProps<typeof SheetPrimitive.Content>) {
   return (
     <SheetPrimitive.Portal>
-      <SheetPrimitive.Overlay className="fixed inset-0 z-50 bg-ink/30" />
+      <SheetPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-[2px]" />
       <SheetPrimitive.Content
         className={cn("fixed inset-x-0 bottom-0 z-50 max-h-[80dvh] overflow-y-auto rounded-t-md border-t border-rule bg-card p-5 outline-none", className)}
         {...props}
