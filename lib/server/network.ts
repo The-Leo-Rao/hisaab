@@ -60,11 +60,16 @@ export function sepoliaRpc(): string {
 }
 
 export function demoNames(): DemoNames | null {
-  const demo = readJson<{
+  type Demo = {
     names: { company: string; freelancer: string; engagement: string; contractors: string[] };
     whitechainWallets: Record<string, Address>;
     ensControllers: Record<string, Address>;
-  }>(process.env.HISAAB_ENS_DEMO_FILE || "../HSB_ENSv2/.ens-demo.json");
+  };
+  let demo: Demo | null = null;
+  try {
+    if (process.env.HISAAB_ENS_DEMO) demo = JSON.parse(process.env.HISAAB_ENS_DEMO) as Demo;
+  } catch {}
+  demo ??= readJson<Demo>(process.env.HISAAB_ENS_DEMO_FILE || "../HSB_ENSv2/.ens-demo.json");
   if (!demo) return null;
   const names: Record<string, string> = {
     acme: demo.names.company,
