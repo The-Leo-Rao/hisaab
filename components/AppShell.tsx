@@ -20,17 +20,22 @@ const NAV = [
   ["/identity", "Identity"],
 ] as const;
 
-function IdentitySwitch() {
+function IdentitySwitch({ dark }: { dark: boolean }) {
   const { cfg, choice, choose, identity, me } = useHisaab();
   if (!cfg) return <span className="skeleton h-9 w-40" />;
   if (!cfg.local) return <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />;
   return (
     <div className="flex items-center gap-2">
       <DropdownMenu.Root>
-        <DropdownMenu.Trigger className="flex h-10 items-center gap-2 rounded-sm border border-rule-strong bg-card px-3 text-left hover:bg-paper-2">
+        <DropdownMenu.Trigger
+          className={cn(
+            "flex h-10 items-center gap-2 rounded-sm border px-3 text-left",
+            dark ? "border-white/15 bg-white/[0.04] text-paper hover:bg-white/[0.08]" : "border-rule-strong bg-card hover:bg-paper-2",
+          )}
+        >
           <span className="grid leading-tight">
             <span className="text-sm font-medium">{identity ? identity.label : "Browser wallet"}</span>
-            <span className="num text-[11px] text-ink-3">{identity?.ens ?? middle(me)}</span>
+            <span className={cn("num text-[11px]", dark ? "text-paper/55" : "text-ink-3")}>{identity?.ens ?? middle(me)}</span>
           </span>
           <ChevronDown className="size-4 text-ink-3" />
         </DropdownMenu.Trigger>
@@ -64,16 +69,17 @@ function IdentitySwitch() {
 export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const { cfg, error } = useHisaab();
+  const dark = path === "/";
   useEffect(() => {
     if (isDemo()) document.body.classList.remove("grain");
   }, []);
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-rule bg-paper/95 backdrop-blur-[2px]">
+      <header className={cn("sticky top-0 z-40 border-b backdrop-blur-[2px]", dark ? "border-white/10 bg-[#060a12]/85 text-paper" : "border-rule bg-paper/95")}>
         <div className="mx-auto flex h-16 max-w-[1120px] items-center gap-4 px-4 md:px-6">
           <Link href="/" className="flex items-baseline gap-3">
             <span className="font-display text-[26px] leading-none">Hisaab</span>
-            <span className="num hidden rounded-sm border border-rule px-1.5 py-0.5 text-[10px] tracking-[0.08em] text-ink-3 sm:inline">
+            <span className={cn("num hidden rounded-sm border px-1.5 py-0.5 text-[10px] tracking-[0.08em] sm:inline", dark ? "border-white/15 text-paper/55" : "border-rule text-ink-3")}>
               WHITECHAIN · {cfg?.chainId ?? 1874}
               {cfg?.local ? " · FORK" : ""}
             </span>
@@ -84,7 +90,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={href}
                 href={href}
                 className={cn(
-                  "rounded-sm px-3 py-2 text-[15px] text-ink-2 hover:text-ink",
+                  "rounded-sm px-3 py-2 text-[15px]",
+                  dark ? "text-paper/65 hover:text-paper" : "text-ink-2 hover:text-ink",
                   path.startsWith(href) && "text-ink underline decoration-ink decoration-2 underline-offset-[10px]",
                 )}
               >
@@ -93,12 +100,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto">
-            <IdentitySwitch />
+            <IdentitySwitch dark={dark} />
           </div>
         </div>
-        <nav className="flex gap-1 overflow-x-auto border-t border-rule px-2 [scrollbar-width:none] md:hidden">
+        <nav className={cn("flex gap-1 overflow-x-auto border-t px-2 [scrollbar-width:none] md:hidden", dark ? "border-white/10" : "border-rule")}>
           {NAV.map(([href, label]) => (
-            <Link key={href} href={href} className={cn("shrink-0 px-3 py-2.5 text-sm text-ink-2", path.startsWith(href) && "font-medium text-ink")}>
+            <Link key={href} href={href} className={cn("shrink-0 px-3 py-2.5 text-sm", dark ? "text-paper/65" : "text-ink-2", path.startsWith(href) && "font-medium text-ink")}>
               {label}
             </Link>
           ))}
@@ -114,7 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: dur.short, ease: ease.out }}
-        className="mx-auto w-full max-w-[1120px] px-4 pt-8 pb-24 md:px-6 md:pt-12"
+        className={dark ? "w-full" : "mx-auto w-full max-w-[1120px] px-4 pt-8 pb-24 md:px-6 md:pt-12"}
       >
         {children}
       </motion.main>
