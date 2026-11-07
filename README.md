@@ -115,6 +115,6 @@ Use MetaMask or Rabby for Whitechain. Phantom can't add custom networks.
 
 ## Feedback and AI use
 
-Our notes for the Whitechain team are in [`HSB_Contract/WHITECHAIN_FEEDBACK.md`](HSB_Contract/WHITECHAIN_FEEDBACK.md).
+Our notes for the Whitechain team are in [`WHITECHAIN_FEEDBACK.md`](WHITECHAIN_FEEDBACK.md).
 We used Claude Code as a pair programmer (contracts, tests, app and deploy scripts). The product and design decisions
 are ours, and we reviewed what it wrote.
