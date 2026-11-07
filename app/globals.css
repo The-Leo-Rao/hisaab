@@ -141,8 +141,44 @@ body.grain::before {
   border-radius: var(--radius-sm);
 }
 
+@keyframes hero-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate3d(-4%, 3%, 0) scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes metal-sheen {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+.hero-glow {
+  animation: hero-drift 15s ease-in-out infinite;
+}
+
+.metal-text {
+  background-image: linear-gradient(100deg, #9aa1ad 0%, #9aa1ad 35%, #f6f1e6 48%, #c9a46a 55%, #9aa1ad 68%, #9aa1ad 100%);
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: metal-sheen 15s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .skeleton {
+  .skeleton,
+  .hero-glow,
+  .metal-text {
     animation: none;
   }
 }
