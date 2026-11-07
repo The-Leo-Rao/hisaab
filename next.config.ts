@@ -16,7 +16,10 @@ const config: NextConfig = {
     },
   },
   async rewrites() {
-    return [{ source: "/hisaab-api/:path*", destination: `${api}/api/v1/hisaab/:path*` }];
+    return [
+      { source: "/hisaab-api/:path*", destination: `${api}/api/v1/hisaab/:path*` },
+      { source: "/ens-api/:path*", destination: `${api}/api/v1/ens/:path*` },
+    ];
   },
 };
 

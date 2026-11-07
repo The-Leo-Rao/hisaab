@@ -113,6 +113,19 @@ export const api = {
   approve: (body: { name: string; from: string; approval: string }) => call<UnsignedTx>("/ens/approve", body),
 };
 
+async function ensCall<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`/ens-api${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `The ENS service answered ${res.status}.`);
+  return j as T;
+}
+
+export const ensWrite = {
+  create: (body: { name: string; from: string; expiry?: string; resolver?: string }) => ensCall<UnsignedTx>("/children/create", body),
+  modify: (body: { name: string; from: string; expiry: string }) => ensCall<UnsignedTx>("/children/modify", body),
+  revoke: (body: { name: string; from: string }) => ensCall<UnsignedTx>("/children/revoke", body),
+};
+
 export async function downloadPdf(path: "/statement" | "/invoice-pdf", body: { id: string; document?: unknown; sealed?: unknown }, filename: string) {
   const res = await fetch(`${API}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) {
