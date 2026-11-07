@@ -120,6 +120,25 @@ async function ensCall<T>(path: string, body: unknown): Promise<T> {
   return j as T;
 }
 
+async function ensGet<T>(path: string): Promise<T> {
+  const res = await fetch(`/ens-api${path}`, { cache: "no-store" });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `The ENS service answered ${res.status}.`);
+  return j as T;
+}
+
+export type EnsQuote = { name: string; available: boolean; total: string; paymentToken: string; minCommitmentAge: string; duration: string };
+export type RegisterBody = { name: string; owner: string; from: string; duration: string; secret?: string };
+
+export const ensRegister = {
+  status: () => ensGet<{ registrar: string; paymentToken: string; supportsTopLevelRegistration: boolean }>("/status"),
+  quote: (name: string, owner: string, duration: string) =>
+    ensGet<EnsQuote>(`/register/quote?name=${encodeURIComponent(name)}&owner=${owner}&duration=${duration}`),
+  commit: (body: RegisterBody) => ensCall<UnsignedTx & { secret: string; commitment: string }>("/register/prepare-commit", body),
+  commitmentStatus: (commitment: string) => ensGet<{ canReveal: boolean; remainingSeconds: string }>(`/register/commitment-status?commitment=${commitment}`),
+  reveal: (body: RegisterBody & { secret: string }) => ensCall<UnsignedTx>("/register/prepare-reveal", body),
+};
+
 export const ensWrite = {
   create: (body: { name: string; from: string; expiry?: string; resolver?: string }) => ensCall<UnsignedTx>("/children/create", body),
   modify: (body: { name: string; from: string; expiry: string }) => ensCall<UnsignedTx>("/children/modify", body),
