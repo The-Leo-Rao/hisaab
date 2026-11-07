@@ -5,7 +5,6 @@ import { useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { drawCoinFace } from "./coinFace";
 import { FRAG, VERT } from "./shader";
-import { lightAt, morphAt } from "./timeline";
 
 function compile(gl: WebGLRenderingContext, type: number, src: string) {
   const s = gl.createShader(type)!;
@@ -29,7 +28,9 @@ function monoFamily() {
   return v || "ui-monospace, monospace";
 }
 
-export function MetalMorph({ className, still }: { className?: string; still?: number }) {
+const SPIN = 12;
+
+export function MetalCoin({ className, still }: { className?: string; still?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const reduced = useReducedMotion();
   const [failed, setFailed] = useState(false);
@@ -65,8 +66,7 @@ export function MetalMorph({ className, still }: { className?: string; still?: n
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
     const uRes = gl.getUniformLocation(prog, "uRes");
-    const uMorph = gl.getUniformLocation(prog, "uMorph");
-    const uLight = gl.getUniformLocation(prog, "uLight");
+    const uAngle = gl.getUniformLocation(prog, "uAngle");
     gl.uniform1i(gl.getUniformLocation(prog, "uFace"), 0);
 
     let live = true;
@@ -78,8 +78,7 @@ export function MetalMorph({ className, still }: { className?: string; still?: n
     const draw = (seconds: number) => {
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.uniform2f(uRes, canvas.width, canvas.height);
-      gl.uniform1f(uMorph, still ?? (animate ? morphAt(seconds) : 1));
-      gl.uniform1f(uLight, lightAt(seconds));
+      gl.uniform1f(uAngle, still ?? (animate ? ((seconds % SPIN) / SPIN) * Math.PI * 2 : 0.35));
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     };
 
@@ -142,5 +141,5 @@ export function MetalMorph({ className, still }: { className?: string; still?: n
   }, [reduced, still]);
 
   if (failed) return null;
-  return <canvas ref={ref} className={cn("block size-full", className)} role="img" aria-label="Two metal hands in a handshake slowly recast into a coin stamped hisaab.eth" />;
+  return <canvas ref={ref} className={cn("block size-full", className)} role="img" aria-label="A rotating metal coin stamped hisaab.eth" />;
 }

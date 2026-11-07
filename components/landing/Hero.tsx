@@ -9,7 +9,7 @@ import { useHisaab } from "@/lib/hisaab";
 import { dur, ease } from "@/lib/motion";
 import { toNumber } from "@/lib/format";
 import { NumberTicker } from "@/components/ui/number-ticker";
-import { MetalMorph } from "./metal/MetalMorph";
+import { MetalCoin } from "./metal/MetalCoin";
 
 type Stats = { invoices: number; settled: bigint; receipts: number; gasless: number };
 
@@ -123,7 +123,7 @@ export function Hero() {
           transition={{ duration: 1.4, ease: ease.out }}
           className="relative mx-auto aspect-square w-full max-w-[560px] md:-mr-8"
         >
-          <MetalMorph />
+          <MetalCoin />
         </motion.div>
       </div>
 
