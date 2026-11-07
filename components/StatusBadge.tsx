@@ -31,7 +31,7 @@ export function StatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[13px] font-medium whitespace-nowrap",
+        "inline-flex h-7 items-center gap-1.5 rounded-sm border px-2.5 text-[13px] font-medium whitespace-nowrap",
         toneBorder[k.state],
         toneSoft[k.state],
         toneText[k.state],
