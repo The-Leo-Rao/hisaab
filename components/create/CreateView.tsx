@@ -381,7 +381,7 @@ export function CreateView() {
             )}
             {mode === "freelance" && (
               <label className="flex items-center gap-2 text-[15px]">
-                <input type="checkbox" checked={f.open} onChange={(e) => set("open", e.target.checked)} className="size-4 accent-[#14213d]" />
+                <input type="checkbox" checked={f.open} onChange={(e) => set("open", e.target.checked)} className="size-4 accent-[#f5b62a]" />
                 Anyone with the link may pay
               </label>
             )}

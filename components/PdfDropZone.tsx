@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 function SheetIcon({ lift }: { lift: boolean }) {
   return (
     <motion.svg viewBox="0 0 40 48" className="h-12 w-10 text-ink" animate={{ y: lift ? -4 : 0 }} transition={{ duration: 0.22 }} aria-hidden>
-      <path d="M4 2h22l10 10v32a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#fffdf8" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4 2h22l10 10v32a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#111318" stroke="currentColor" strokeWidth="1.5" />
       <path d="M26 2v10h10" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <path d="M9 22h20M9 28h20M9 34h13" stroke="currentColor" strokeOpacity=".45" strokeWidth="1.5" />
     </motion.svg>

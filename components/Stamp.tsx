@@ -85,7 +85,7 @@ export function Stamp({
   );
 
   return (
-    <div role="img" aria-label={ariaLabel ?? (date ? `${text} on ${date}` : text)} className={cn("pointer-events-none relative select-none", className)} style={{ mixBlendMode: "multiply" }}>
+    <div role="img" aria-label={ariaLabel ?? (date ? `${text} on ${date}` : text)} className={cn("pointer-events-none relative select-none", className)} style={{ mixBlendMode: "screen" }}>
       <motion.div
         key={`${variant}-${text}`}
         className="absolute inset-0 blur-[3px]"

@@ -52,7 +52,7 @@ export function GaslessBeam({
   const d = useRef<HTMLDivElement>(null);
   const done = phase === "done";
   const still = reduced || phase === "idle";
-  const common = { containerRef: box, pathColor: "#14213d", pathOpacity: 0.18, pathWidth: 2, gradientStartColor: "#14213d", gradientStopColor: "#34d399" };
+  const common = { containerRef: box, pathColor: "#f1f0ec", pathOpacity: 0.14, pathWidth: 2, gradientStartColor: "#f5b62a", gradientStopColor: "#46d99b" };
   const loop = phase === "relaying" || phase === "signing";
 
   return (
