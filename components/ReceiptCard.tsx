@@ -33,7 +33,7 @@ export function ReceiptCard({
             <CardContainer className="w-full" containerClassName="w-full">
               <CardBody className="w-full">
                 <CardItem translateZ={18} className="w-full">
-                  <img src={image} alt={`Hisaab receipt #${id}, soulbound NFT with a QR code to the verify page`} className="aspect-[640/400] w-full rounded-[18px] shadow-[0_10px_30px_-14px_rgb(11_18_32/0.55)]" />
+                  <img src={image} alt={`हिsaab receipt #${id}, soulbound NFT with a QR code to the verify page`} className="aspect-[640/400] w-full rounded-[18px] shadow-[0_10px_30px_-14px_rgb(11_18_32/0.55)]" />
                 </CardItem>
               </CardBody>
             </CardContainer>

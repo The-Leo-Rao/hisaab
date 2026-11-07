@@ -344,7 +344,7 @@ export function VerifyView({ id }: { id: string }) {
                 downloadPdf("/statement", { id, document: docRef.current ?? undefined }, `hisaab-statement-${id}.pdf`).catch((e) => toast.error(e.message))
               }
             >
-              <FileDown /> Download Hisaab Statement (PDF)
+              <FileDown /> Download हिsaab Statement (PDF)
             </Button>
             {sheetDoc && key && (
               <Button variant="secondary" onClick={() => downloadSealedPdf(id, sheetDoc as never, key).catch((e) => toast.error(e.message))}>
